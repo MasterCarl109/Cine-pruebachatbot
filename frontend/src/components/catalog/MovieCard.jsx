@@ -1,8 +1,10 @@
 import { Card, CardMedia, CardContent, Typography, Chip, Box, Stack } from '@mui/material'
 
-export default function MovieCard({ movie }) {
+export default function MovieCard({ movie, onClick }) {
   return (
-    <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', transition: '0.2s', '&:hover': { transform: 'translateY(-4px)', boxShadow: 4 } }}>
+    <Card
+      onClick={() => onClick?.(movie)}
+      sx={{ height: '100%', display: 'flex', flexDirection: 'column', transition: '0.2s', cursor: onClick ? 'pointer' : 'default', '&:hover': onClick ? { transform: 'translateY(-4px)', boxShadow: 4 } : {} }}>
       <CardMedia
         component="img"
         height="200"

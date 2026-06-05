@@ -29,11 +29,15 @@ async function generateResponse(systemPrompt, context, userMessage) {
 function buildContextText(context) {
     const parts = []
     if (context.peliculas_encontradas?.length) {
+        const sorted = [...context.peliculas_encontradas].sort((a, b) => b.popularidad - a.popularidad)
         parts.push('Películas disponibles en el catálogo:')
-        context.peliculas_encontradas.forEach(m => {
-            let line = `- "${m.titulo}" - ${m.sinopsis}. Director: ${m.director}. Géneros: ${m.generos?.join(', ') || 'N/A'}.`
+        sorted.forEach(m => {
+            let line = `- "${m.titulo}" - ${m.sinopsis}. Director: ${m.director}. Géneros: ${m.generos?.join(', ') || 'N/A'}. Popularidad: ${m.popularidad}.`
             if (m.disponibilidad?.length) {
-                line += ` Disponible en: ${m.disponibilidad.map(d => `${d.tienda} (${d.copias} copias, del ${d.desde} al ${d.hasta})`).join(', ')}.`
+                line += ` Disponible en: ${m.disponibilidad.map(d => {
+                    const horarios = d.horarios?.map(h => `${h.hora} (${h.disponibles}/${h.total} asientos libres)`).join(', ') || ''
+                    return `${d.tienda} (${d.copias} copias, del ${d.desde} al ${d.hasta}, horarios: ${horarios})`
+                }).join(', ')}.`
             }
             parts.push(line)
         })

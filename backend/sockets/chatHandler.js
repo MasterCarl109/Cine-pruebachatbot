@@ -148,22 +148,37 @@ module.exports = (io) => {
                 const now = new Date()
                 const context = {
                     consulta: message,
-                    peliculas_encontradas: movies.map(m => ({
-                        titulo: m.title,
-                        sinopsis: m.synopsis,
-                        duracion: m.duration,
-                        clasificacion: m.rating,
-                        director: m.director?.name || 'Desconocido',
-                        generos: m.genres?.map(g => g.name) || [],
-                        disponibilidad: m.screenings
-                            ?.filter(s => new Date(s.startDate) <= now && new Date(s.endDate) >= now)
-                            .map(s => ({
+                    peliculas_encontradas: movies.map(m => {
+                        const activeScreenings = m.screenings
+                            ?.filter(s => new Date(s.startDate) <= now && new Date(s.endDate) >= now) || []
+
+                        const totalBooked = activeScreenings.reduce((sum, s) =>
+                            sum + (s.showtimes?.reduce((stSum, st) => stSum + (st.bookedSeats || 0), 0) || 0), 0)
+
+                        const totalShowtimes = activeScreenings.reduce((sum, s) =>
+                            sum + (s.showtimes?.length || 0), 0)
+
+                        return {
+                            titulo: m.title,
+                            sinopsis: m.synopsis,
+                            duracion: m.duration,
+                            clasificacion: m.rating,
+                            director: m.director?.name || 'Desconocido',
+                            generos: m.genres?.map(g => g.name) || [],
+                            popularidad: totalBooked + totalShowtimes,
+                            disponibilidad: activeScreenings.map(s => ({
                                 tienda: s.store?.name || 'Desconocida',
                                 desde: new Date(s.startDate).toLocaleDateString('es-MX'),
                                 hasta: new Date(s.endDate).toLocaleDateString('es-MX'),
-                                copias: s.copies
+                                copias: s.copies,
+                                horarios: s.showtimes?.map(st => ({
+                                    hora: st.time,
+                                    disponibles: (st.totalSeats || 10) - (st.bookedSeats || 0),
+                                    total: st.totalSeats || 10
+                                })) || []
                             })) || []
-                    })),
+                        }
+                    }),
                     directores_encontrados: directors.map(d => ({
                         nombre: d.name,
                         nacionalidad: d.nationality,

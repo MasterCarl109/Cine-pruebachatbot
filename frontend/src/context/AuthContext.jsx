@@ -16,12 +16,10 @@ export function AuthProvider({ children }) {
     localStorage.setItem('token', data.token)
     localStorage.setItem('user', JSON.stringify(data.user))
     setUser(data.user)
-    if (data.user.role === 'employee') {
-      navigate('/employee')
-    } else if (data.user.role === 'client') {
+    if (data.user.role === 'client') {
       navigate('/')
     } else {
-      navigate('/admin')
+      navigate('/staff')
     }
   }, [navigate])
 

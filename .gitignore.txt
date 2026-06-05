@@ -1,0 +1,7 @@
+# Ignorar cualquier node_modules del repositorio
+node_modules/
+
+# Opcionalmente
+dist/
+build/
+.env

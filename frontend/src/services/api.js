@@ -50,4 +50,10 @@ export const createUser = (data) => api.post('/users', data)
 export const updateUser = (id, data) => api.put(`/users/${id}`, data)
 export const deleteUser = (id) => api.delete(`/users/${id}`)
 
+export const getReservations = (params) => api.get('/reservations', { params })
+export const getMyReservations = () => api.get('/reservations/mine')
+export const createReservation = (data) => api.post('/reservations', data)
+export const cancelReservation = (id) => api.put(`/reservations/${id}/cancel`)
+export const checkSeat = (params) => api.get('/reservations/check-seat', { params })
+
 export default api

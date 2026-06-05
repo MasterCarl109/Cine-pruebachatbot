@@ -11,6 +11,7 @@ const directorRoutes = require('./routes/directors')
 const genreRoutes = require('./routes/genres')
 const storeRoutes = require('./routes/stores')
 const userRoutes = require('./routes/users')
+const reservationRoutes = require('./routes/reservations')
 const { authenticate, requireRole } = require('./middleware/auth')
 
 const app = express()
@@ -37,6 +38,7 @@ app.use('/api/genres', genreRoutes)
 app.use('/api/stores', storeRoutes)
 
 app.use('/api/users', authenticate, requireRole('admin'), userRoutes)
+app.use('/api/reservations', reservationRoutes)
 
 chatHandler(io)
 

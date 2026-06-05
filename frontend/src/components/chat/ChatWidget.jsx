@@ -7,12 +7,19 @@ import SmartToyIcon from '@mui/icons-material/SmartToy'
 import PersonIcon from '@mui/icons-material/Person'
 import socket from '../../services/socket'
 
-export default function ChatWidget() {
+const darkBg = '#1a1a2e'
+const chatBg = '#16213e'
+const botBubble = '#2a2a3e'
+const userBubble = '#e50914'
+
+export default function ChatWidget({ onOpenChange }) {
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [typing, setTyping] = useState(false)
   const endRef = useRef(null)
+
+  const toggleOpen = () => setOpen(prev => { const next = !prev; onOpenChange?.(next); return next })
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, typing])
 
@@ -43,24 +50,25 @@ export default function ChatWidget() {
   return (
     <>
       {open && (
-        <Paper elevation={8} sx={{ position: 'fixed', bottom: 80, right: 20, width: 360, height: 500, display: 'flex', flexDirection: 'column', borderRadius: 3, overflow: 'hidden', zIndex: 1200 }}>
+        <Paper elevation={8} sx={{ position: 'fixed', bottom: 80, right: 20, width: 360, height: 500, display: 'flex', flexDirection: 'column', borderRadius: 3, overflow: 'hidden', zIndex: 1200, bgcolor: darkBg, border: '1px solid rgba(255,255,255,0.08)' }}>
           <Box sx={{ bgcolor: 'primary.main', color: 'white', p: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
             <SmartToyIcon />
             <Typography variant="subtitle1" sx={{ flex: 1 }}>Asistente CineClub</Typography>
-            <IconButton size="small" color="inherit" onClick={() => setOpen(false)}><CloseIcon /></IconButton>
+            <IconButton size="small" color="inherit" onClick={() => { setOpen(false); onOpenChange?.(false) }}><CloseIcon /></IconButton>
           </Box>
-          <Box sx={{ flex: 1, overflow: 'auto', p: 2, bgcolor: '#f8f9fa', display: 'flex', flexDirection: 'column', gap: 1 }}>
+
+          <Box sx={{ flex: 1, overflow: 'auto', p: 2, bgcolor: chatBg, display: 'flex', flexDirection: 'column', gap: 1 }}>
             {messages.length === 0 && (
-              <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', mt: 4 }}>
+              <Typography variant="body2" sx={{ textAlign: 'center', mt: 4, color: 'rgba(255,255,255,0.5)' }}>
                 ¡Hola! Pregúntame sobre nuestro catálogo de películas.
               </Typography>
             )}
             {messages.map((msg, i) => (
               <Box key={i} sx={{ display: 'flex', gap: 1, alignSelf: msg.from === 'user' ? 'flex-end' : 'flex-start', flexDirection: msg.from === 'user' ? 'row-reverse' : 'row', maxWidth: '80%' }}>
-                <Avatar sx={{ width: 28, height: 28, bgcolor: msg.from === 'user' ? 'secondary.main' : 'primary.main' }}>
+                <Avatar sx={{ width: 28, height: 28, bgcolor: msg.from === 'user' ? userBubble : 'primary.main' }}>
                   {msg.from === 'user' ? <PersonIcon sx={{ fontSize: 16 }} /> : <SmartToyIcon sx={{ fontSize: 16 }} />}
                 </Avatar>
-                <Paper elevation={1} sx={{ p: 1.5, borderRadius: 3, bgcolor: msg.from === 'user' ? 'secondary.main' : 'white', color: msg.from === 'user' ? 'white' : 'text.primary' }}>
+                <Paper elevation={1} sx={{ p: 1.5, borderRadius: 3, bgcolor: msg.from === 'user' ? userBubble : botBubble, color: 'white' }}>
                   <Typography variant="body2">{msg.text}</Typography>
                 </Paper>
               </Box>
@@ -68,18 +76,30 @@ export default function ChatWidget() {
             {typing && (
               <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
                 <Avatar sx={{ width: 28, height: 28, bgcolor: 'primary.main' }}><SmartToyIcon sx={{ fontSize: 16 }} /></Avatar>
-                <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>Escribiendo...</Typography>
+                <Typography variant="body2" sx={{ fontStyle: 'italic', color: 'rgba(255,255,255,0.5)' }}>Escribiendo...</Typography>
               </Box>
             )}
             <div ref={endRef} />
           </Box>
-          <Box sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider', display: 'flex', gap: 1 }}>
-            <TextField fullWidth size="small" placeholder="Escribe un mensaje..." value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown} />
+
+          <Box sx={{ p: 2, bgcolor: darkBg, borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', gap: 1 }}>
+            <TextField
+              fullWidth size="small"
+              placeholder="Escribe un mensaje..."
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              slotProps={{
+                input: {
+                  sx: { color: 'white', bgcolor: chatBg, '& fieldset': { borderColor: 'rgba(255,255,255,0.15)' }, '&:hover fieldset': { borderColor: 'rgba(255,255,255,0.3)' } }
+                }
+              }}
+            />
             <IconButton color="primary" onClick={handleSend}><SendIcon /></IconButton>
           </Box>
         </Paper>
       )}
-      <Fab color="primary" sx={{ position: 'fixed', bottom: 20, right: 20, zIndex: 1200 }} onClick={() => setOpen(!open)}>
+      <Fab color="primary" sx={{ position: 'fixed', bottom: 20, right: 20, zIndex: 1200 }} onClick={toggleOpen}>
         {open ? <CloseIcon /> : <ChatIcon />}
       </Fab>
     </>

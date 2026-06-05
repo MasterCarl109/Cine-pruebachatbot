@@ -59,6 +59,8 @@ const seed = async () => {
 
         const now = new Date()
 
+        const makeShowtimes = (...times) => times.map(time => ({ time, totalSeats: 10, bookedSeats: 0 }))
+
         const movies = [
             {
                 title: 'Psicosis',
@@ -69,8 +71,8 @@ const seed = async () => {
                 director: hitchcock._id,
                 genres: [terror._id, suspenso._id],
                 screenings: [
-                    { store: centro._id, startDate: daysFromNow(-45), endDate: daysFromNow(15), copies: 2 },
-                    { store: norte._id, startDate: daysFromNow(-45), endDate: daysFromNow(5), copies: 1 }
+                    { store: centro._id, startDate: daysFromNow(-45), endDate: daysFromNow(15), copies: 2, showtimes: makeShowtimes('16:00', '18:00', '20:00') },
+                    { store: norte._id, startDate: daysFromNow(-45), endDate: daysFromNow(5), copies: 1, showtimes: makeShowtimes('16:00', '20:00') }
                 ]
             },
             {
@@ -82,8 +84,8 @@ const seed = async () => {
                 director: hitchcock._id,
                 genres: [terror._id, suspenso._id],
                 screenings: [
-                    { store: centro._id, startDate: daysFromNow(-60), endDate: daysFromNow(-10), copies: 1 },
-                    { store: sur._id, startDate: daysFromNow(-60), endDate: daysFromNow(-10), copies: 2 }
+                    { store: centro._id, startDate: daysFromNow(-60), endDate: daysFromNow(-10), copies: 1, showtimes: makeShowtimes('18:00') },
+                    { store: sur._id, startDate: daysFromNow(-60), endDate: daysFromNow(-10), copies: 2, showtimes: makeShowtimes('18:00', '20:00') }
                 ]
             },
             {
@@ -95,8 +97,8 @@ const seed = async () => {
                 director: hitchcock._id,
                 genres: [suspenso._id, drama._id],
                 screenings: [
-                    { store: norte._id, startDate: daysFromNow(-30), endDate: daysFromNow(5), copies: 1 },
-                    { store: sur._id, startDate: daysFromNow(-30), endDate: daysFromNow(5), copies: 1 }
+                    { store: norte._id, startDate: daysFromNow(-30), endDate: daysFromNow(5), copies: 1, showtimes: makeShowtimes('16:00', '18:00') },
+                    { store: sur._id, startDate: daysFromNow(-30), endDate: daysFromNow(5), copies: 1, showtimes: makeShowtimes('20:00') }
                 ]
             },
             {
@@ -108,9 +110,9 @@ const seed = async () => {
                 director: nolan._id,
                 genres: [sciFi._id, accion._id, suspenso._id],
                 screenings: [
-                    { store: centro._id, startDate: daysFromNow(-15), endDate: daysFromNow(20), copies: 3 },
-                    { store: norte._id, startDate: daysFromNow(-15), endDate: daysFromNow(20), copies: 2 },
-                    { store: sur._id, startDate: daysFromNow(-15), endDate: daysFromNow(20), copies: 2 }
+                    { store: centro._id, startDate: daysFromNow(-15), endDate: daysFromNow(20), copies: 3, showtimes: makeShowtimes('14:00', '16:00', '18:00', '20:00') },
+                    { store: norte._id, startDate: daysFromNow(-15), endDate: daysFromNow(20), copies: 2, showtimes: makeShowtimes('16:00', '18:00', '20:00') },
+                    { store: sur._id, startDate: daysFromNow(-15), endDate: daysFromNow(20), copies: 2, showtimes: makeShowtimes('16:00', '20:00') }
                 ]
             },
             {
@@ -122,8 +124,8 @@ const seed = async () => {
                 director: nolan._id,
                 genres: [sciFi._id, drama._id],
                 screenings: [
-                    { store: centro._id, startDate: daysFromNow(5), endDate: daysFromNow(35), copies: 2 },
-                    { store: sur._id, startDate: daysFromNow(5), endDate: daysFromNow(35), copies: 1 }
+                    { store: centro._id, startDate: daysFromNow(5), endDate: daysFromNow(35), copies: 2, showtimes: makeShowtimes('16:00', '18:00', '20:00') },
+                    { store: sur._id, startDate: daysFromNow(5), endDate: daysFromNow(35), copies: 1, showtimes: makeShowtimes('18:00', '20:00') }
                 ]
             },
             {
@@ -135,7 +137,7 @@ const seed = async () => {
                 director: gerwig._id,
                 genres: [comedia._id, drama._id],
                 screenings: [
-                    { store: norte._id, startDate: daysFromNow(-10), endDate: daysFromNow(10), copies: 2 }
+                    { store: norte._id, startDate: daysFromNow(-10), endDate: daysFromNow(10), copies: 2, showtimes: makeShowtimes('16:00', '18:00', '20:00') }
                 ]
             },
             {
@@ -147,10 +149,10 @@ const seed = async () => {
                 director: gerwig._id,
                 genres: [comedia._id],
                 screenings: [
-                    { store: centro._id, startDate: daysFromNow(-90), endDate: daysFromNow(-60), copies: 4 },
-                    { store: norte._id, startDate: daysFromNow(-90), endDate: daysFromNow(-60), copies: 3 },
-                    { store: sur._id, startDate: daysFromNow(-90), endDate: daysFromNow(-60), copies: 3 },
-                    { store: centro._id, startDate: daysFromNow(30), endDate: daysFromNow(60), copies: 4 }
+                    { store: centro._id, startDate: daysFromNow(-90), endDate: daysFromNow(-60), copies: 4, showtimes: makeShowtimes('14:00', '16:00', '18:00') },
+                    { store: norte._id, startDate: daysFromNow(-90), endDate: daysFromNow(-60), copies: 3, showtimes: makeShowtimes('16:00', '18:00') },
+                    { store: sur._id, startDate: daysFromNow(-90), endDate: daysFromNow(-60), copies: 3, showtimes: makeShowtimes('16:00', '20:00') },
+                    { store: centro._id, startDate: daysFromNow(30), endDate: daysFromNow(60), copies: 4, showtimes: makeShowtimes('14:00', '16:00', '18:00', '20:00') }
                 ]
             },
             {
@@ -162,8 +164,8 @@ const seed = async () => {
                 director: delToro._id,
                 genres: [drama._id, terror._id],
                 screenings: [
-                    { store: centro._id, startDate: daysFromNow(-5), endDate: daysFromNow(25), copies: 1 },
-                    { store: sur._id, startDate: daysFromNow(-5), endDate: daysFromNow(25), copies: 2 }
+                    { store: centro._id, startDate: daysFromNow(-5), endDate: daysFromNow(25), copies: 1, showtimes: makeShowtimes('16:00', '18:00', '20:00') },
+                    { store: sur._id, startDate: daysFromNow(-5), endDate: daysFromNow(25), copies: 2, showtimes: makeShowtimes('16:00', '20:00') }
                 ]
             },
             {
@@ -175,7 +177,7 @@ const seed = async () => {
                 director: delToro._id,
                 genres: [drama._id],
                 screenings: [
-                    { store: norte._id, startDate: daysFromNow(-20), endDate: daysFromNow(-1), copies: 1 }
+                    { store: norte._id, startDate: daysFromNow(-20), endDate: daysFromNow(-1), copies: 1, showtimes: makeShowtimes('18:00', '20:00') }
                 ]
             },
             {
@@ -187,19 +189,19 @@ const seed = async () => {
                 director: spikeLee._id,
                 genres: [drama._id, comedia._id],
                 screenings: [
-                    { store: centro._id, startDate: daysFromNow(-3), endDate: daysFromNow(15), copies: 1 },
-                    { store: norte._id, startDate: daysFromNow(-3), endDate: daysFromNow(15), copies: 1 },
-                    { store: sur._id, startDate: daysFromNow(-3), endDate: daysFromNow(15), copies: 1 }
+                    { store: centro._id, startDate: daysFromNow(-3), endDate: daysFromNow(15), copies: 1, showtimes: makeShowtimes('14:00', '16:00', '18:00', '20:00') },
+                    { store: norte._id, startDate: daysFromNow(-3), endDate: daysFromNow(15), copies: 1, showtimes: makeShowtimes('16:00', '18:00') },
+                    { store: sur._id, startDate: daysFromNow(-3), endDate: daysFromNow(15), copies: 1, showtimes: makeShowtimes('18:00', '20:00') }
                 ]
             }
         ]
 
-        await Movie.insertMany(movies)
+        const createdMovies = await Movie.insertMany(movies)
         console.log('Películas insertadas')
 
         const [centroStore, norteStore, surStore] = createdStores
 
-        await User.create([
+        const users = await User.create([
             { email: 'admin@cineclub.com', password: 'admin123', name: 'Admin Principal', role: 'admin' },
             { email: 'manager.centro@cineclub.com', password: 'manager123', name: 'Carlos Gómez', role: 'manager', store: centroStore._id },
             { email: 'manager.sur@cineclub.com', password: 'manager123', name: 'María López', role: 'manager', store: surStore._id },
@@ -212,6 +214,65 @@ const seed = async () => {
         console.log('  manager.sur@cineclub.com / manager123 (manager - Sur)')
         console.log('  empleado.norte@cineclub.com / empleado123 (employee - Norte)')
         console.log('  cliente@cineclub.com / cliente123 (client)')
+
+        const [adminUser, mgrCentro, mgrSur, empNorte, clientUser] = users
+
+        const Reservation = require('./models/Reservation')
+        await Reservation.deleteMany({})
+
+        const inception = createdMovies.find(m => m.title === 'Inception')
+        const hazLoCorrecto = createdMovies.find(m => m.title === 'Haz lo correcto')
+        const psicosis = createdMovies.find(m => m.title === 'Psicosis')
+        const ladyBird = createdMovies.find(m => m.title === 'Lady Bird')
+
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+
+        await Reservation.create([
+            {
+                movie: inception._id, client: clientUser._id, createdBy: mgrCentro._id,
+                store: centroStore._id, screeningDate: today, showtime: '18:00',
+                seatNumber: 1, status: 'active'
+            },
+            {
+                movie: inception._id, client: clientUser._id, createdBy: mgrCentro._id,
+                store: centroStore._id, screeningDate: today, showtime: '18:00',
+                seatNumber: 2, status: 'active'
+            },
+            {
+                movie: hazLoCorrecto._id, client: clientUser._id, createdBy: mgrCentro._id,
+                store: centroStore._id, screeningDate: today, showtime: '16:00',
+                seatNumber: 3, status: 'active'
+            },
+            {
+                movie: psicosis._id, client: clientUser._id, createdBy: mgrCentro._id,
+                store: centroStore._id, screeningDate: today, showtime: '20:00',
+                seatNumber: 5, status: 'active'
+            },
+            {
+                movie: ladyBird._id, client: clientUser._id, createdBy: empNorte._id,
+                store: norteStore._id, screeningDate: today, showtime: '18:00',
+                seatNumber: 1, status: 'cancelled'
+            }
+        ])
+        console.log('Reservas de muestra creadas')
+
+        await Movie.findOneAndUpdate(
+            { _id: inception._id, 'screenings.showtimes.time': '18:00' },
+            { $inc: { 'screenings.$[].showtimes.$[st].bookedSeats': 2 } },
+            { arrayFilters: [{ 'st.time': '18:00' }] }
+        )
+        await Movie.findOneAndUpdate(
+            { _id: hazLoCorrecto._id, 'screenings.showtimes.time': '16:00' },
+            { $inc: { 'screenings.$[].showtimes.$[st].bookedSeats': 1 } },
+            { arrayFilters: [{ 'st.time': '16:00' }] }
+        )
+        await Movie.findOneAndUpdate(
+            { _id: psicosis._id, 'screenings.showtimes.time': '20:00' },
+            { $inc: { 'screenings.$[].showtimes.$[st].bookedSeats': 1 } },
+            { arrayFilters: [{ 'st.time': '20:00' }] }
+        )
+        console.log('Asientos actualizados en showtimes')
 
         console.log('Seed completado exitosamente')
         process.exit(0)

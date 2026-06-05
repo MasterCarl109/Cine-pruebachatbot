@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Container, Typography, Box } from '@mui/material'
 import MovieCard from './MovieCard'
+import MovieDetailDialog from './MovieDetailDialog'
 import Filters from './Filters'
 import { getMovies } from '../../services/api'
 
@@ -8,6 +9,8 @@ export default function MovieGrid() {
   const [movies, setMovies] = useState([])
   const [loading, setLoading] = useState(true)
   const [filters, setFilters] = useState({ search: '', genre: '', store: '' })
+  const [selectedMovie, setSelectedMovie] = useState(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
 
   const fetchMovies = useCallback(async () => {
     try {
@@ -27,6 +30,11 @@ export default function MovieGrid() {
 
   useEffect(() => { fetchMovies() }, [fetchMovies])
 
+  const handleCardClick = (movie) => {
+    setSelectedMovie(movie)
+    setDialogOpen(true)
+  }
+
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
       <Typography variant="h4" gutterBottom>
@@ -45,11 +53,16 @@ export default function MovieGrid() {
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', md: '1fr 1fr 1fr', lg: '1fr 1fr 1fr 1fr' }, gap: 3 }}>
           {movies.map((movie) => (
             <Box key={movie._id}>
-              <MovieCard movie={movie} />
+              <MovieCard movie={movie} onClick={handleCardClick} />
             </Box>
           ))}
         </Box>
       )}
+      <MovieDetailDialog
+        open={dialogOpen}
+        movie={selectedMovie}
+        onClose={() => setDialogOpen(false)}
+      />
     </Container>
   )
 }
