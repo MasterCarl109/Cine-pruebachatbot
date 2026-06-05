@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { login as apiLogin } from '../services/api'
+import { login as staffLogin, staffLogout, clientLogin as apiClientLogin, clientLogout } from '../services/api'
 
 const AuthContext = createContext(null)
 
@@ -12,26 +12,41 @@ export function AuthProvider({ children }) {
   const navigate = useNavigate()
 
   const login = useCallback(async (email, password) => {
-    const { data } = await apiLogin(email, password)
-    localStorage.setItem('token', data.token)
+    const { data } = await staffLogin(email, password)
     localStorage.setItem('user', JSON.stringify(data.user))
     setUser(data.user)
-    if (data.user.role === 'client') {
-      navigate('/')
+    if (data.user.role === 'employee') {
+      navigate('/panel/e')
     } else {
-      navigate('/staff')
+      navigate('/panel')
     }
   }, [navigate])
 
-  const logout = useCallback(() => {
-    localStorage.removeItem('token')
-    localStorage.removeItem('user')
-    setUser(null)
+  const clientLogin = useCallback(async (email, password) => {
+    const { data } = await apiClientLogin(email, password)
+    localStorage.setItem('user', JSON.stringify(data.user))
+    setUser(data.user)
     navigate('/')
   }, [navigate])
 
+  const logout = useCallback(async () => {
+    const redirect = user?.type === 'staff' ? '/access' : '/login'
+    try {
+      if (user?.type === 'staff') {
+        await staffLogout()
+      } else {
+        await clientLogout()
+      }
+    } catch {
+      // always clear local state
+    }
+    localStorage.removeItem('user')
+    setUser(null)
+    navigate(redirect)
+  }, [navigate, user])
+
   return (
-    <AuthContext.Provider value={{ user, login, logout }}>
+    <AuthContext.Provider value={{ user, login, clientLogin, logout }}>
       {children}
     </AuthContext.Provider>
   )

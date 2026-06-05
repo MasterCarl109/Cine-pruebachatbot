@@ -5,6 +5,7 @@ const Director = require('./models/Director')
 const Genre = require('./models/Genre')
 const Store = require('./models/Store')
 const User = require('./models/User')
+const Client = require('./models/Client')
 
 const directors = [
     { name: 'Alfred Hitchcock', nationality: 'Británica', biography: 'Director británico conocido como el maestro del suspense.' },
@@ -32,7 +33,19 @@ const stores = [
 function daysFromNow(days) {
     const d = new Date()
     d.setDate(d.getDate() + days)
+    d.setHours(0, 0, 0, 0)
     return d
+}
+
+const generateScreenings = (storeId, dayOffsets, times) => {
+    const screenings = []
+    for (const offset of dayOffsets) {
+        const date = daysFromNow(offset)
+        for (const time of times) {
+            screenings.push({ store: storeId, date, time, totalSeats: 10, bookedSeats: 0 })
+        }
+    }
+    return screenings
 }
 
 const seed = async () => {
@@ -45,7 +58,8 @@ const seed = async () => {
             Director.deleteMany({}),
             Genre.deleteMany({}),
             Store.deleteMany({}),
-            User.deleteMany({})
+            User.deleteMany({}),
+            Client.deleteMany({})
         ])
         console.log('Colecciones limpiadas')
 
@@ -57,10 +71,6 @@ const seed = async () => {
         const [terror, comedia, drama, sciFi, suspenso, accion] = createdGenres
         const [centro, norte, sur] = createdStores
 
-        const now = new Date()
-
-        const makeShowtimes = (...times) => times.map(time => ({ time, totalSeats: 10, bookedSeats: 0 }))
-
         const movies = [
             {
                 title: 'Psicosis',
@@ -71,8 +81,8 @@ const seed = async () => {
                 director: hitchcock._id,
                 genres: [terror._id, suspenso._id],
                 screenings: [
-                    { store: centro._id, startDate: daysFromNow(-45), endDate: daysFromNow(15), copies: 2, showtimes: makeShowtimes('16:00', '18:00', '20:00') },
-                    { store: norte._id, startDate: daysFromNow(-45), endDate: daysFromNow(5), copies: 1, showtimes: makeShowtimes('16:00', '20:00') }
+                    ...generateScreenings(centro._id, [-10, -5, 0, 5, 10], ['16:00', '18:00', '20:00']),
+                    ...generateScreenings(norte._id, [-10, -5, 0, 5], ['16:00', '20:00'])
                 ]
             },
             {
@@ -84,8 +94,8 @@ const seed = async () => {
                 director: hitchcock._id,
                 genres: [terror._id, suspenso._id],
                 screenings: [
-                    { store: centro._id, startDate: daysFromNow(-60), endDate: daysFromNow(-10), copies: 1, showtimes: makeShowtimes('18:00') },
-                    { store: sur._id, startDate: daysFromNow(-60), endDate: daysFromNow(-10), copies: 2, showtimes: makeShowtimes('18:00', '20:00') }
+                    ...generateScreenings(centro._id, [-30, -25, -20, -15], ['18:00']),
+                    ...generateScreenings(sur._id, [-30, -25, -20, -15], ['18:00', '20:00'])
                 ]
             },
             {
@@ -97,8 +107,8 @@ const seed = async () => {
                 director: hitchcock._id,
                 genres: [suspenso._id, drama._id],
                 screenings: [
-                    { store: norte._id, startDate: daysFromNow(-30), endDate: daysFromNow(5), copies: 1, showtimes: makeShowtimes('16:00', '18:00') },
-                    { store: sur._id, startDate: daysFromNow(-30), endDate: daysFromNow(5), copies: 1, showtimes: makeShowtimes('20:00') }
+                    ...generateScreenings(norte._id, [-5, 0], ['16:00', '18:00']),
+                    ...generateScreenings(sur._id, [-5, 0], ['20:00'])
                 ]
             },
             {
@@ -110,9 +120,9 @@ const seed = async () => {
                 director: nolan._id,
                 genres: [sciFi._id, accion._id, suspenso._id],
                 screenings: [
-                    { store: centro._id, startDate: daysFromNow(-15), endDate: daysFromNow(20), copies: 3, showtimes: makeShowtimes('14:00', '16:00', '18:00', '20:00') },
-                    { store: norte._id, startDate: daysFromNow(-15), endDate: daysFromNow(20), copies: 2, showtimes: makeShowtimes('16:00', '18:00', '20:00') },
-                    { store: sur._id, startDate: daysFromNow(-15), endDate: daysFromNow(20), copies: 2, showtimes: makeShowtimes('16:00', '20:00') }
+                    ...generateScreenings(centro._id, [-3, 0, 3, 7, 10, 14], ['14:00', '16:00', '18:00', '20:00']),
+                    ...generateScreenings(norte._id, [-3, 0, 3, 7, 10, 14], ['16:00', '18:00', '20:00']),
+                    ...generateScreenings(sur._id, [-3, 0, 3, 7, 10, 14], ['16:00', '20:00'])
                 ]
             },
             {
@@ -124,8 +134,8 @@ const seed = async () => {
                 director: nolan._id,
                 genres: [sciFi._id, drama._id],
                 screenings: [
-                    { store: centro._id, startDate: daysFromNow(5), endDate: daysFromNow(35), copies: 2, showtimes: makeShowtimes('16:00', '18:00', '20:00') },
-                    { store: sur._id, startDate: daysFromNow(5), endDate: daysFromNow(35), copies: 1, showtimes: makeShowtimes('18:00', '20:00') }
+                    ...generateScreenings(centro._id, [5, 10, 15, 20, 25], ['16:00', '18:00', '20:00']),
+                    ...generateScreenings(sur._id, [5, 10, 15, 20, 25], ['18:00', '20:00'])
                 ]
             },
             {
@@ -137,7 +147,7 @@ const seed = async () => {
                 director: gerwig._id,
                 genres: [comedia._id, drama._id],
                 screenings: [
-                    { store: norte._id, startDate: daysFromNow(-10), endDate: daysFromNow(10), copies: 2, showtimes: makeShowtimes('16:00', '18:00', '20:00') }
+                    ...generateScreenings(norte._id, [-5, -2, 0, 3, 7], ['16:00', '18:00', '20:00'])
                 ]
             },
             {
@@ -149,10 +159,9 @@ const seed = async () => {
                 director: gerwig._id,
                 genres: [comedia._id],
                 screenings: [
-                    { store: centro._id, startDate: daysFromNow(-90), endDate: daysFromNow(-60), copies: 4, showtimes: makeShowtimes('14:00', '16:00', '18:00') },
-                    { store: norte._id, startDate: daysFromNow(-90), endDate: daysFromNow(-60), copies: 3, showtimes: makeShowtimes('16:00', '18:00') },
-                    { store: sur._id, startDate: daysFromNow(-90), endDate: daysFromNow(-60), copies: 3, showtimes: makeShowtimes('16:00', '20:00') },
-                    { store: centro._id, startDate: daysFromNow(30), endDate: daysFromNow(60), copies: 4, showtimes: makeShowtimes('14:00', '16:00', '18:00', '20:00') }
+                    ...generateScreenings(centro._id, [30, 35, 40, 45], ['14:00', '16:00', '18:00', '20:00']),
+                    ...generateScreenings(norte._id, [30, 35, 40], ['16:00', '18:00']),
+                    ...generateScreenings(sur._id, [30, 35, 40], ['16:00', '20:00'])
                 ]
             },
             {
@@ -164,8 +173,8 @@ const seed = async () => {
                 director: delToro._id,
                 genres: [drama._id, terror._id],
                 screenings: [
-                    { store: centro._id, startDate: daysFromNow(-5), endDate: daysFromNow(25), copies: 1, showtimes: makeShowtimes('16:00', '18:00', '20:00') },
-                    { store: sur._id, startDate: daysFromNow(-5), endDate: daysFromNow(25), copies: 2, showtimes: makeShowtimes('16:00', '20:00') }
+                    ...generateScreenings(centro._id, [0, 3, 7, 10, 14], ['16:00', '18:00', '20:00']),
+                    ...generateScreenings(sur._id, [0, 3, 7, 10, 14], ['16:00', '20:00'])
                 ]
             },
             {
@@ -177,7 +186,7 @@ const seed = async () => {
                 director: delToro._id,
                 genres: [drama._id],
                 screenings: [
-                    { store: norte._id, startDate: daysFromNow(-20), endDate: daysFromNow(-1), copies: 1, showtimes: makeShowtimes('18:00', '20:00') }
+                    ...generateScreenings(norte._id, [-10, -7, -3], ['18:00', '20:00'])
                 ]
             },
             {
@@ -189,9 +198,9 @@ const seed = async () => {
                 director: spikeLee._id,
                 genres: [drama._id, comedia._id],
                 screenings: [
-                    { store: centro._id, startDate: daysFromNow(-3), endDate: daysFromNow(15), copies: 1, showtimes: makeShowtimes('14:00', '16:00', '18:00', '20:00') },
-                    { store: norte._id, startDate: daysFromNow(-3), endDate: daysFromNow(15), copies: 1, showtimes: makeShowtimes('16:00', '18:00') },
-                    { store: sur._id, startDate: daysFromNow(-3), endDate: daysFromNow(15), copies: 1, showtimes: makeShowtimes('18:00', '20:00') }
+                    ...generateScreenings(centro._id, [0, 3, 7, 10], ['14:00', '16:00', '18:00', '20:00']),
+                    ...generateScreenings(norte._id, [0, 3, 7, 10], ['16:00', '18:00']),
+                    ...generateScreenings(sur._id, [0, 3, 7, 10], ['18:00', '20:00'])
                 ]
             }
         ]
@@ -205,17 +214,17 @@ const seed = async () => {
             { email: 'admin@cineclub.com', password: 'admin123', name: 'Admin Principal', role: 'admin' },
             { email: 'manager.centro@cineclub.com', password: 'manager123', name: 'Carlos Gómez', role: 'manager', store: centroStore._id },
             { email: 'manager.sur@cineclub.com', password: 'manager123', name: 'María López', role: 'manager', store: surStore._id },
-            { email: 'empleado.norte@cineclub.com', password: 'empleado123', name: 'Pedro Ramírez', role: 'employee', store: norteStore._id },
-            { email: 'cliente@cineclub.com', password: 'cliente123', name: 'Ana Torres', role: 'client' }
+            { email: 'empleado.norte@cineclub.com', password: 'empleado123', name: 'Pedro Ramírez', role: 'employee', store: norteStore._id }
         ])
+
+        const clientUser = await Client.create({ email: 'cliente@cineclub.com', password: 'cliente123', name: 'Ana Torres' })
         console.log('Usuarios creados:')
         console.log('  admin@cineclub.com / admin123 (admin)')
         console.log('  manager.centro@cineclub.com / manager123 (manager - Centro)')
         console.log('  manager.sur@cineclub.com / manager123 (manager - Sur)')
         console.log('  empleado.norte@cineclub.com / empleado123 (employee - Norte)')
-        console.log('  cliente@cineclub.com / cliente123 (client)')
 
-        const [adminUser, mgrCentro, mgrSur, empNorte, clientUser] = users
+        const [adminUser, mgrCentro, mgrSur, empNorte] = users
 
         const Reservation = require('./models/Reservation')
         await Reservation.deleteMany({})
@@ -225,8 +234,7 @@ const seed = async () => {
         const psicosis = createdMovies.find(m => m.title === 'Psicosis')
         const ladyBird = createdMovies.find(m => m.title === 'Lady Bird')
 
-        const today = new Date()
-        today.setHours(0, 0, 0, 0)
+        const today = daysFromNow(0)
 
         await Reservation.create([
             {
@@ -257,22 +265,18 @@ const seed = async () => {
         ])
         console.log('Reservas de muestra creadas')
 
-        await Movie.findOneAndUpdate(
-            { _id: inception._id, 'screenings.showtimes.time': '18:00' },
-            { $inc: { 'screenings.$[].showtimes.$[st].bookedSeats': 2 } },
-            { arrayFilters: [{ 'st.time': '18:00' }] }
-        )
-        await Movie.findOneAndUpdate(
-            { _id: hazLoCorrecto._id, 'screenings.showtimes.time': '16:00' },
-            { $inc: { 'screenings.$[].showtimes.$[st].bookedSeats': 1 } },
-            { arrayFilters: [{ 'st.time': '16:00' }] }
-        )
-        await Movie.findOneAndUpdate(
-            { _id: psicosis._id, 'screenings.showtimes.time': '20:00' },
-            { $inc: { 'screenings.$[].showtimes.$[st].bookedSeats': 1 } },
-            { arrayFilters: [{ 'st.time': '20:00' }] }
-        )
-        console.log('Asientos actualizados en showtimes')
+        const updateBookedSeats = async (movie, store, date, time, inc) => {
+            await Movie.findOneAndUpdate(
+                { _id: movie._id, 'screenings.store': store._id, 'screenings.date': date, 'screenings.time': time },
+                { $inc: { 'screenings.$[s].bookedSeats': inc } },
+                { arrayFilters: [{ 's.store': store._id, 's.date': date, 's.time': time }] }
+            )
+        }
+
+        await updateBookedSeats(inception, centroStore, today, '18:00', 2)
+        await updateBookedSeats(hazLoCorrecto, centroStore, today, '16:00', 1)
+        await updateBookedSeats(psicosis, centroStore, today, '20:00', 1)
+        console.log('Asientos actualizados en screenings')
 
         console.log('Seed completado exitosamente')
         process.exit(0)

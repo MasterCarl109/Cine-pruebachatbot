@@ -16,14 +16,12 @@ import AdminUsers from './pages/AdminUsers'
 import EmployeePanel from './pages/EmployeePanel'
 import ClientReservations from './pages/ClientReservations'
 
-function ProtectedRoute({ children, roles, redirectTo }) {
-  const token = localStorage.getItem('token')
+function ProtectedRoute({ children, roles, type, redirectTo }) {
   const stored = localStorage.getItem('user')
-  if (!token) return <Navigate to={redirectTo || '/login'} replace />
-  if (roles && stored) {
-    const user = JSON.parse(stored)
-    if (!roles.includes(user.role)) return <Navigate to="/" replace />
-  }
+  if (!stored) return <Navigate to={redirectTo || '/login'} replace />
+  const user = JSON.parse(stored)
+  if (type && user.type !== type) return <Navigate to="/" replace />
+  if (roles && !roles.includes(user.role)) return <Navigate to="/" replace />
   return children
 }
 
@@ -39,34 +37,34 @@ export default function App() {
             <Route path="login" element={<LoginPage />} />
             <Route path="registro" element={<RegisterPage />} />
             <Route path="mis-reservas" element={
-              <ProtectedRoute roles={['client']}>
+              <ProtectedRoute type="client" roles={['client']}>
                 <ClientReservations />
               </ProtectedRoute>
             } />
           </Route>
 
           {/* ===== PORTAL STAFF ===== */}
-          <Route path="/staff/login" element={<StaffLogin />} />
+          <Route path="/access" element={<StaffLogin />} />
 
-          <Route path="/staff" element={
-            <ProtectedRoute roles={['admin', 'manager']} redirectTo="/staff/login">
+          <Route path="/panel" element={
+            <ProtectedRoute type="staff" roles={['admin', 'manager']} redirectTo="/access">
               <StaffLayout />
             </ProtectedRoute>
           }>
             <Route index element={<AdminDashboard />} />
-            <Route path="peliculas" element={<AdminMovies />} />
-            <Route path="directores" element={<AdminDirectors />} />
-            <Route path="generos" element={<AdminGenres />} />
-            <Route path="tiendas" element={<AdminStores />} />
-            <Route path="usuarios" element={
-              <ProtectedRoute roles={['admin']} redirectTo="/staff/login">
+            <Route path="p" element={<AdminMovies />} />
+            <Route path="d" element={<AdminDirectors />} />
+            <Route path="g" element={<AdminGenres />} />
+            <Route path="t" element={<AdminStores />} />
+            <Route path="u" element={
+              <ProtectedRoute type="staff" roles={['admin']} redirectTo="/access">
                 <AdminUsers />
               </ProtectedRoute>
             } />
           </Route>
 
-          <Route path="/staff/empleado" element={
-            <ProtectedRoute roles={['employee']} redirectTo="/staff/login">
+          <Route path="/panel/e" element={
+            <ProtectedRoute type="staff" roles={['employee']} redirectTo="/access">
               <StaffLayout />
             </ProtectedRoute>
           }>

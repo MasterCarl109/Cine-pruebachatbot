@@ -66,10 +66,10 @@ async function searchCatalog(message) {
         return { movies: [], directors: [] }
     }
 
-    const now = new Date()
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
     const activeFilter = {
-        'screenings.startDate': { $lte: now },
-        'screenings.endDate': { $gte: now }
+        'screenings.date': { $gte: today }
     }
 
     const regexConditions = keywords.map(kw => ({
@@ -149,14 +149,13 @@ module.exports = (io) => {
                 const context = {
                     consulta: message,
                     peliculas_encontradas: movies.map(m => {
+                        const today = new Date()
+                        today.setHours(0, 0, 0, 0)
                         const activeScreenings = m.screenings
-                            ?.filter(s => new Date(s.startDate) <= now && new Date(s.endDate) >= now) || []
+                            ?.filter(s => new Date(s.date) >= today) || []
 
                         const totalBooked = activeScreenings.reduce((sum, s) =>
-                            sum + (s.showtimes?.reduce((stSum, st) => stSum + (st.bookedSeats || 0), 0) || 0), 0)
-
-                        const totalShowtimes = activeScreenings.reduce((sum, s) =>
-                            sum + (s.showtimes?.length || 0), 0)
+                            sum + (s.bookedSeats || 0), 0)
 
                         return {
                             titulo: m.title,
@@ -165,17 +164,13 @@ module.exports = (io) => {
                             clasificacion: m.rating,
                             director: m.director?.name || 'Desconocido',
                             generos: m.genres?.map(g => g.name) || [],
-                            popularidad: totalBooked + totalShowtimes,
+                            popularidad: totalBooked + activeScreenings.length,
                             disponibilidad: activeScreenings.map(s => ({
                                 tienda: s.store?.name || 'Desconocida',
-                                desde: new Date(s.startDate).toLocaleDateString('es-MX'),
-                                hasta: new Date(s.endDate).toLocaleDateString('es-MX'),
-                                copias: s.copies,
-                                horarios: s.showtimes?.map(st => ({
-                                    hora: st.time,
-                                    disponibles: (st.totalSeats || 10) - (st.bookedSeats || 0),
-                                    total: st.totalSeats || 10
-                                })) || []
+                                fecha: new Date(s.date).toLocaleDateString('es-MX'),
+                                hora: s.time,
+                                disponibles: (s.totalSeats || 10) - (s.bookedSeats || 0),
+                                total: s.totalSeats || 10
                             })) || []
                         }
                     }),

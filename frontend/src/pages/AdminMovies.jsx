@@ -8,17 +8,15 @@ import AddIcon from '@mui/icons-material/Add'
 const emptyForm = { title: '', releaseDate: '', synopsis: '', duration: '', rating: 'PG-13', director: '', genres: [] }
 
 function getMovieStatus(movie) {
-  const now = new Date()
-  const active = movie.screenings?.some(s => new Date(s.startDate) <= now && new Date(s.endDate) >= now)
-  const future = movie.screenings?.some(s => new Date(s.startDate) > now)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const active = movie.screenings?.some(s => {
+    const d = new Date(s.date)
+    d.setHours(0, 0, 0, 0)
+    return d >= today
+  })
   if (active) return { label: 'En cartelera', color: 'success' }
-  if (future) return { label: 'Próximamente', color: 'info' }
   return { label: 'Archivada', color: 'default' }
-}
-
-function formatDate(dateStr) {
-  if (!dateStr) return ''
-  return new Date(dateStr).toLocaleDateString('es-MX')
 }
 
 export default function AdminMovies() {
@@ -48,7 +46,7 @@ export default function AdminMovies() {
       ...form,
       releaseDate: form.releaseDate ? new Date(form.releaseDate) : undefined,
       duration: Number(form.duration),
-      screenings: screenings.filter(s => s.copies > 0)
+      screenings: screenings.filter(s => s.date && s.time)
     }
     if (editing) {
       await updateMovie(editing, payload)
@@ -73,11 +71,11 @@ export default function AdminMovies() {
       genres: movie.genres?.map(g => g._id) || []
     })
     setScreenings(movie.screenings?.map(s => ({
-      _id: s._id,
       store: s.store?._id || s.store,
-      startDate: s.startDate ? s.startDate.slice(0, 10) : '',
-      endDate: s.endDate ? s.endDate.slice(0, 10) : '',
-      copies: s.copies
+      date: s.date ? s.date.slice(0, 10) : '',
+      time: s.time || '',
+      totalSeats: s.totalSeats || 10,
+      bookedSeats: s.bookedSeats || 0
     })) || [])
     setEditing(movie._id)
     setDialog(true)
@@ -95,7 +93,7 @@ export default function AdminMovies() {
   }
 
   const addScreening = (storeId) => {
-    setScreenings(prev => [...prev, { store: storeId, startDate: '', endDate: '', copies: 0 }])
+    setScreenings(prev => [...prev, { store: storeId, date: '', time: '', totalSeats: 10 }])
   }
 
   const removeScreening = (idx) => {
@@ -105,6 +103,8 @@ export default function AdminMovies() {
   const getStoreScreenings = (storeId) => {
     return screenings.filter(s => s.store === storeId)
   }
+
+  const times = ['14:00', '16:00', '18:00', '20:00', '22:00']
 
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
@@ -143,7 +143,7 @@ export default function AdminMovies() {
         <DialogTitle>{editing ? 'Editar película' : 'Nueva película'}</DialogTitle>
         <DialogContent>
           <TextField fullWidth label="Título" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} margin="dense" required />
-          <TextField fullWidth label="Fecha de estreno" type="date" value={form.releaseDate} onChange={(e) => setForm({ ...form, releaseDate: e.target.value })} margin="dense" slotProps={{ inputLabel: { shrink: true } }} />
+          <TextField fullWidth label="Fecha de estreno" type="date" value={form.releaseDate} onChange={(e) => setForm({ ...form, releaseDate: e.target.value })} margin="dense" slotProps={{ inputLabel: { shrink: form.releaseDate ? true : undefined } }} />
           <TextField fullWidth label="Sinopsis" value={form.synopsis} onChange={(e) => setForm({ ...form, synopsis: e.target.value })} margin="dense" multiline rows={3} />
           <TextField fullWidth label="Duración (min)" value={form.duration} onChange={(e) => setForm({ ...form, duration: e.target.value })} margin="dense" type="number" />
           <FormControl fullWidth margin="dense">
@@ -165,7 +165,7 @@ export default function AdminMovies() {
             </Select>
           </FormControl>
 
-          <Typography variant="subtitle2" sx={{ mt: 3, mb: 1 }}>Programación (Screenings)</Typography>
+          <Typography variant="subtitle2" sx={{ mt: 3, mb: 1 }}>Funciones (Screenings)</Typography>
           {stores.map((store) => {
             const storeScreenings = getStoreScreenings(store._id)
             return (
@@ -175,15 +175,20 @@ export default function AdminMovies() {
                   const globalIdx = screenings.indexOf(s)
                   return (
                     <Box key={idx} sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 1 }}>
-                      <TextField size="small" type="date" label="Inicio" value={s.startDate} onChange={(e) => updateScreening(globalIdx, 'startDate', e.target.value)} slotProps={{ inputLabel: { shrink: true } }} sx={{ width: 180 }} />
-                      <TextField size="small" type="date" label="Fin" value={s.endDate} onChange={(e) => updateScreening(globalIdx, 'endDate', e.target.value)} slotProps={{ inputLabel: { shrink: true } }} sx={{ width: 180 }} />
-                      <TextField size="small" type="number" label="Copias" value={s.copies} onChange={(e) => updateScreening(globalIdx, 'copies', Number(e.target.value))} sx={{ width: 100 }} />
+                      <TextField size="small" type="date" label="Fecha" value={s.date} onChange={(e) => updateScreening(globalIdx, 'date', e.target.value)} slotProps={{ inputLabel: { shrink: s.date ? true : undefined } }} sx={{ width: 180 }} />
+                      <FormControl size="small" sx={{ width: 120 }}>
+                        <InputLabel>Hora</InputLabel>
+                        <Select value={s.time} label="Hora" onChange={(e) => updateScreening(globalIdx, 'time', e.target.value)}>
+                          {times.map((t) => <MenuItem key={t} value={t}>{t}</MenuItem>)}
+                        </Select>
+                      </FormControl>
+                      <TextField size="small" type="number" label="Asientos" value={s.totalSeats} onChange={(e) => updateScreening(globalIdx, 'totalSeats', Number(e.target.value))} sx={{ width: 110 }} />
                       <IconButton size="small" color="error" onClick={() => removeScreening(globalIdx)}><DeleteIcon /></IconButton>
                     </Box>
                   )
                 })}
                 <Button size="small" variant="outlined" onClick={() => addScreening(store._id)} startIcon={<AddIcon />}>
-                  Agregar screening
+                  Agregar función
                 </Button>
               </Box>
             )

@@ -7,13 +7,13 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
-  const { login } = useAuth()
+  const { clientLogin } = useAuth()
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
     try {
-      await login(email, password)
+      await clientLogin(email, password)
     } catch (err) {
       setError(err.response?.data?.error || 'Error al iniciar sesión')
     }

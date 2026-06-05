@@ -5,6 +5,7 @@ import { clientTheme } from '../../theme'
 import ClientNavbar from './ClientNavbar'
 import ChatWidget from '../chat/ChatWidget'
 import WhatsAppButton from './WhatsAppButton'
+import StaffAccessButton from './StaffAccessButton'
 
 export default function ClientLayout() {
   const [chatOpen, setChatOpen] = useState(false)
@@ -21,6 +22,7 @@ export default function ClientLayout() {
         </Box>
         <ChatWidget onOpenChange={handleChatOpenChange} />
         {!chatOpen && <WhatsAppButton />}
+        <StaffAccessButton />
       </Box>
     </ThemeProvider>
   )

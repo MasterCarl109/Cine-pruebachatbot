@@ -1,19 +1,21 @@
-const jwt = require('jsonwebtoken')
+const Session = require('../models/Session')
 
 function authenticate(req, res, next) {
-    const header = req.headers.authorization
-    if (!header || !header.startsWith('Bearer ')) {
-        return res.status(401).json({ error: 'Token no proporcionado' })
+    const token = req.cookies?.token
+
+    if (!token) {
+        return res.status(401).json({ error: 'Sesión no encontrada' })
     }
 
-    try {
-        const token = header.split(' ')[1]
-        const decoded = jwt.verify(token, process.env.JWT_SECRET)
-        req.user = decoded
+    Session.findOne({ token }).lean().then(session => {
+        if (!session || session.expiresAt < new Date()) {
+            return res.status(401).json({ error: 'Sesión inválida o expirada' })
+        }
+        req.user = session.user
         next()
-    } catch (error) {
-        return res.status(401).json({ error: 'Token inválido o expirado' })
-    }
+    }).catch(err => {
+        res.status(500).json({ error: 'Error de autenticación' })
+    })
 }
 
 function requireRole(...roles) {

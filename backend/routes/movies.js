@@ -10,9 +10,9 @@ router.get('/', async (req, res) => {
         let filter = {}
 
         if (all !== 'true') {
-            const now = new Date()
-            filter['screenings.startDate'] = { $lte: now }
-            filter['screenings.endDate'] = { $gte: now }
+            const today = new Date()
+            today.setHours(0, 0, 0, 0)
+            filter['screenings.date'] = { $gte: today }
         }
 
         if (genre) filter.genres = genre

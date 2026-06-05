@@ -28,6 +28,9 @@ router.post('/', async (req, res) => {
         if (!email || !password || !name || !role) {
             return res.status(400).json({ error: 'Email, password, nombre y rol son requeridos' })
         }
+        if (role === 'client') {
+            return res.status(400).json({ error: 'Los clientes se registran desde el portal público' })
+        }
         if ((role === 'manager' || role === 'employee') && !store) {
             return res.status(400).json({ error: 'Tienda es requerida para manager y employee' })
         }

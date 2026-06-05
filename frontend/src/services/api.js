@@ -2,25 +2,26 @@ import axios from 'axios'
 
 const api = axios.create({
   baseURL: 'http://localhost:3000/api',
-  headers: { 'Content-Type': 'application/json' }
-})
-
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token')
-  if (token) config.headers.Authorization = `Bearer ${token}`
-  return config
+  headers: { 'Content-Type': 'application/json' },
+  withCredentials: true
 })
 
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401) localStorage.removeItem('token')
+    if (err.response?.status === 401) {
+      localStorage.removeItem('user')
+    }
     return Promise.reject(err)
   }
 )
 
 export const login = (email, password) => api.post('/auth/login', { email, password })
-export const register = (email, password, name) => api.post('/auth/register', { email, password, name })
+export const staffLogout = () => api.post('/auth/logout')
+export const clientLogin = (email, password) => api.post('/client-auth/login', { email, password })
+export const clientLogout = () => api.post('/client-auth/logout')
+export const clientRegister = (email, password, name) => api.post('/client-auth/register', { email, password, name })
+export const searchClient = (email) => api.get('/client-auth/search', { params: { email } })
 
 export const getMovies = (params) => api.get('/movies', { params })
 export const getMovie = (id) => api.get(`/movies/${id}`)

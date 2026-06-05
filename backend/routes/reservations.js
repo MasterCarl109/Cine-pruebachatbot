@@ -2,7 +2,7 @@ const express = require('express')
 const router = express.Router()
 const Reservation = require('../models/Reservation')
 const Movie = require('../models/Movie')
-const User = require('../models/User')
+const Client = require('../models/Client')
 const { authenticate, requireRole, requireStoreAccess } = require('../middleware/auth')
 
 router.use(authenticate)
@@ -14,7 +14,7 @@ router.post('/', requireRole('admin', 'manager', 'employee'), async (req, res) =
             return res.status(400).json({ error: 'Faltan campos requeridos' })
         }
 
-        const client = await User.findOne({ email: clientEmail, role: 'client', active: true })
+        const client = await Client.findOne({ email: clientEmail, active: true })
         if (!client) {
             return res.status(404).json({ error: 'Cliente no encontrado. El cliente debe estar registrado.' })
         }
@@ -27,25 +27,24 @@ router.post('/', requireRole('admin', 'manager', 'employee'), async (req, res) =
 
         const screening = movie.screenings.find(s => {
             const sId = s.store?._id || s.store
+            const sDateOnly = new Date(s.date)
+            sDateOnly.setHours(0, 0, 0, 0)
+            const dateMatch = sDateOnly.getTime() === sDate.getTime()
+            const timeMatch = s.time === showtime
             const storeMatch = String(sId) === String(req.user.store?._id || req.user.store)
             if (req.user.role === 'admin') {
                 const bodyStoreMatch = String(sId) === String(req.body.storeId || sId)
-                return bodyStoreMatch && s.startDate <= sDate && s.endDate >= sDate
+                return bodyStoreMatch && dateMatch && timeMatch
             }
-            return storeMatch && s.startDate <= sDate && s.endDate >= sDate
+            return storeMatch && dateMatch && timeMatch
         })
 
         if (!screening) {
-            return res.status(400).json({ error: 'No hay función activa para esta película en la fecha y tienda seleccionadas' })
+            return res.status(400).json({ error: 'No hay función activa para esta película en la fecha, hora y tienda seleccionadas' })
         }
 
-        const showtimeEntry = screening.showtimes?.find(st => st.time === showtime)
-        if (!showtimeEntry) {
-            return res.status(400).json({ error: 'Horario no disponible para esta función' })
-        }
-
-        if (showtimeEntry.bookedSeats >= showtimeEntry.totalSeats) {
-            return res.status(400).json({ error: 'No hay asientos disponibles para este horario' })
+        if (screening.bookedSeats >= screening.totalSeats) {
+            return res.status(400).json({ error: 'No hay asientos disponibles para esta función' })
         }
 
         const existing = await Reservation.findOne({
@@ -72,7 +71,7 @@ router.post('/', requireRole('admin', 'manager', 'employee'), async (req, res) =
         const reservation = await Reservation.create({
             movie: movieId,
             client: client._id,
-            createdBy: req.user._id,
+            createdBy: req.user.id,
             store: storeId,
             screeningDate: sDate,
             showtime,
@@ -81,9 +80,9 @@ router.post('/', requireRole('admin', 'manager', 'employee'), async (req, res) =
         })
 
         await Movie.findOneAndUpdate(
-            { _id: movieId, 'screenings.showtimes.time': showtime },
-            { $inc: { 'screenings.$[].showtimes.$[st].bookedSeats': 1 } },
-            { arrayFilters: [{ 'st.time': showtime }] }
+            { _id: movieId, 'screenings.store': storeId, 'screenings.date': sDate, 'screenings.time': showtime },
+            { $inc: { 'screenings.$[s].bookedSeats': 1 } },
+            { arrayFilters: [{ 's.store': storeId, 's.date': sDate, 's.time': showtime }] }
         )
 
         const populated = await Reservation.findById(reservation._id)
@@ -119,10 +118,13 @@ router.put('/:id/cancel', requireRole('admin', 'manager', 'employee'), async (re
         reservation.status = 'cancelled'
         await reservation.save()
 
+        const resDate = new Date(reservation.screeningDate)
+        resDate.setHours(0, 0, 0, 0)
+        const resStoreId = reservation.store?._id || reservation.store
         await Movie.findOneAndUpdate(
-            { _id: reservation.movie, 'screenings.showtimes.time': reservation.showtime },
-            { $inc: { 'screenings.$[].showtimes.$[st].bookedSeats': -1 } },
-            { arrayFilters: [{ 'st.time': reservation.showtime }] }
+            { _id: reservation.movie, 'screenings.store': resStoreId, 'screenings.date': resDate, 'screenings.time': reservation.showtime },
+            { $inc: { 'screenings.$[s].bookedSeats': -1 } },
+            { arrayFilters: [{ 's.store': resStoreId, 's.date': resDate, 's.time': reservation.showtime }] }
         )
 
         const populated = await Reservation.findById(reservation._id)
@@ -171,7 +173,11 @@ router.get('/', requireRole('admin', 'manager', 'employee'), async (req, res) =>
 
 router.get('/mine', async (req, res) => {
     try {
-        const reservations = await Reservation.find({ client: req.user._id, status: 'active' })
+        if (req.user.type !== 'client') {
+            return res.status(403).json({ error: 'Solo clientes pueden ver sus reservas' })
+        }
+
+        const reservations = await Reservation.find({ client: req.user.id, status: 'active' })
             .populate('movie', 'title poster')
             .populate('store', 'name')
             .populate('createdBy', 'name')

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Container, Typography, Button, Box, Tabs, Tab, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Alert, CircularProgress, Chip, Snackbar } from '@mui/material'
-import { getMovies, updateMovie, getReservations, createReservation, cancelReservation, getUsers } from '../services/api'
+import { Container, Typography, Button, Box, Tabs, Tab, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Alert, CircularProgress, Chip, Snackbar, FormControl, InputLabel, Select, MenuItem } from '@mui/material'
+import { getMovies, getReservations, createReservation, cancelReservation, searchClient } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 
 function SeatMap({ totalSeats, bookedSeats, selectedSeat, onSelect }) {
@@ -35,22 +35,20 @@ function SeatMap({ totalSeats, bookedSeats, selectedSeat, onSelect }) {
 
 export default function EmployeePanel() {
   const { user } = useAuth()
-  const storeName = user?.store?.name || 'tu tienda'
   const storeId = user?.store?._id || user?.store
+  const storeName = user?.store?.name || 'Mi Tienda'
 
   const [tab, setTab] = useState(0)
 
   // --- Inventario ---
   const [movies, setMovies] = useState([])
-  const [editCopies, setEditCopies] = useState({})
 
   // --- Nueva Reserva ---
   const [clientEmail, setClientEmail] = useState('')
   const [foundClient, setFoundClient] = useState(null)
   const [searchingClient, setSearchingClient] = useState(false)
   const [selectedMovieId, setSelectedMovieId] = useState('')
-  const [selectedDate, setSelectedDate] = useState('')
-  const [selectedShowtime, setSelectedShowtime] = useState('')
+  const [selectedScreeningKey, setSelectedScreeningKey] = useState('')
   const [selectedSeat, setSelectedSeat] = useState(null)
   const [bookedSeats, setBookedSeats] = useState([])
   const [creating, setCreating] = useState(false)
@@ -68,51 +66,45 @@ export default function EmployeePanel() {
   useEffect(() => { fetchMovies() }, [fetchMovies])
 
   const filteredMovies = movies.filter(m =>
-    m.screenings?.some(s => s.store?.name === storeName)
+    m.screenings?.some(s => String(s.store?._id || s.store) === String(storeId))
   )
 
-  const handleCopyChange = (movieId, screeningIdx, val) => {
-    setEditCopies(prev => ({ ...prev, [`${movieId}-${screeningIdx}`]: val }))
-  }
-
+  // Obtener screenings de la tienda para la película seleccionada
   const selectedMovie = movies.find(m => m._id === selectedMovieId)
-  const selectedScreening = selectedMovie?.screenings?.find(
-    s => s.store?.name === storeName || s.store === storeId
+  const storeScreenings = selectedMovie?.screenings?.filter(
+    s => String(s.store?._id || s.store) === String(storeId)
+  ) || []
+
+  // Encontrar screening seleccionado (date+time como key)
+  const selectedScreening = storeScreenings.find(
+    s => `${new Date(s.date).toISOString().split('T')[0]}-${s.time}` === selectedScreeningKey
   ) || null
 
-  const todayStr = new Date().toISOString().split('T')[0]
-
-  const searchClient = async () => {
+  const handleSearchClient = async () => {
     if (!clientEmail.trim()) return
     setSearchingClient(true)
     setFoundClient(null)
     setError('')
     try {
-      const res = await getUsers()
-      const client = res.data.find(u =>
-        u.email === clientEmail.trim() && u.role === 'client' && u.active !== false
-      )
-      if (client) {
-        setFoundClient(client)
-      } else {
-        setError('Cliente no encontrado con ese email')
-      }
+      const { data } = await searchClient(clientEmail.trim())
+      setFoundClient(data)
     } catch (err) {
-      setError('Error al buscar cliente')
+      setError(err.response?.data?.error || 'Cliente no encontrado')
     } finally {
       setSearchingClient(false)
     }
   }
 
   const fetchBookedSeats = useCallback(async () => {
-    if (!selectedMovieId || !selectedDate || !selectedShowtime) return
+    if (!selectedMovieId || !selectedScreening) return
+    const dateStr = new Date(selectedScreening.date).toISOString().split('T')[0]
     try {
-      const res = await getReservations({ movieId: selectedMovieId, screeningDate: selectedDate, status: 'active' })
-      setBookedSeats(res.data.filter(r => r.showtime === selectedShowtime).map(r => r.seatNumber))
+      const res = await getReservations({ movieId: selectedMovieId, screeningDate: dateStr, status: 'active' })
+      setBookedSeats(res.data.filter(r => r.showtime === selectedScreening.time).map(r => r.seatNumber))
     } catch (err) {
       console.error('Error al obtener asientos reservados:', err)
     }
-  }, [selectedMovieId, selectedDate, selectedShowtime])
+  }, [selectedMovieId, selectedScreening])
 
   useEffect(() => { fetchBookedSeats() }, [fetchBookedSeats])
 
@@ -130,25 +122,26 @@ export default function EmployeePanel() {
   }, [tab, fetchReservations])
 
   const handleCreateReservation = async () => {
-    if (!foundClient || !selectedMovieId || !selectedDate || !selectedShowtime || !selectedSeat) {
+    if (!foundClient || !selectedMovieId || !selectedScreening || !selectedSeat) {
       setError('Completa todos los campos')
       return
     }
     setCreating(true)
     setError('')
     try {
+      const dateStr = new Date(selectedScreening.date).toISOString().split('T')[0]
       await createReservation({
         movieId: selectedMovieId,
         clientEmail: foundClient.email,
-        screeningDate: selectedDate,
-        showtime: selectedShowtime,
+        screeningDate: dateStr,
+        showtime: selectedScreening.time,
         seatNumber: selectedSeat
       })
       setSuccess(`Reserva creada: Asiento ${selectedSeat} para ${foundClient.name}`)
       setSelectedSeat(null)
       setFoundClient(null)
       setClientEmail('')
-      setSelectedShowtime('')
+      setSelectedScreeningKey('')
       setBookedSeats([])
       fetchReservations()
     } catch (err) {
@@ -170,7 +163,10 @@ export default function EmployeePanel() {
 
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Typography variant="h4" gutterBottom>Mi Tienda: {storeName}</Typography>
+      <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 2, mb: 1 }}>
+        <Typography variant="h4">Mi Tienda</Typography>
+        <Chip label={storeName} color="primary" size="small" />
+      </Box>
       <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
         Bienvenido, {user?.name}
       </Typography>
@@ -189,7 +185,7 @@ export default function EmployeePanel() {
         <>
           {filteredMovies.length === 0 ? (
             <Typography variant="body1" color="text.secondary">
-              No hay películas activas en {storeName} en este momento.
+              No hay películas activas en tu tienda en este momento.
             </Typography>
           ) : (
             <TableContainer component={Paper}>
@@ -197,52 +193,31 @@ export default function EmployeePanel() {
                 <TableHead>
                   <TableRow>
                     <TableCell>Película</TableCell>
-                    <TableCell>Disponibilidad</TableCell>
-                    <TableCell>Vigencia</TableCell>
+                    <TableCell>Fecha</TableCell>
+                    <TableCell>Hora</TableCell>
+                    <TableCell>Asientos</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {filteredMovies.map((m) => {
-                    const activeScreenings = m.screenings?.filter(s => s.store?.name === storeName) || []
-                    return (
-                      <TableRow key={m._id}>
+                    const myScreenings = m.screenings?.filter(
+                      s => String(s.store?._id || s.store) === String(storeId)
+                    ) || []
+                    return myScreenings.map((s, idx) => (
+                      <TableRow key={`${m._id}-${idx}`}>
                         <TableCell>
                           <Typography variant="body2" fontWeight="bold">{m.title}</Typography>
                           <Typography variant="caption" color="text.secondary">{m.director?.name}</Typography>
                         </TableCell>
                         <TableCell>
-                          {activeScreenings.map((s, idx) => (
-                            <Box key={idx} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                              <TextField
-                                size="small" type="number" label="Copias"
-                                value={editCopies[`${m._id}-${idx}`] ?? s.copies}
-                                onChange={(e) => handleCopyChange(m._id, idx, Number(e.target.value))}
-                                sx={{ width: 100 }}
-                              />
-                              <Button size="small" variant="outlined" onClick={async () => {
-                                const newCopies = editCopies[`${m._id}-${idx}`]
-                                if (newCopies !== undefined) {
-                                  const screenings = m.screenings.map((sc, i) =>
-                                    i === idx ? { ...sc, copies: newCopies } : sc
-                                  )
-                                  await updateMovie(m._id, { screenings })
-                                  fetchMovies()
-                                }
-                              }}>
-                                Actualizar
-                              </Button>
-                            </Box>
-                          ))}
+                          {new Date(s.date).toLocaleDateString('es-MX')}
                         </TableCell>
+                        <TableCell>{s.time}</TableCell>
                         <TableCell>
-                          {activeScreenings.map((s, idx) => (
-                            <Typography key={idx} variant="caption" display="block">
-                              {new Date(s.startDate).toLocaleDateString('es-MX')} → {new Date(s.endDate).toLocaleDateString('es-MX')}
-                            </Typography>
-                          ))}
+                          {s.totalSeats - s.bookedSeats}/{s.totalSeats} libres
                         </TableCell>
                       </TableRow>
-                    )
+                    ))
                   })}
                 </TableBody>
               </Table>
@@ -265,10 +240,9 @@ export default function EmployeePanel() {
                 label="Email del cliente" size="small"
                 value={clientEmail}
                 onChange={e => setClientEmail(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && searchClient()}
-                sx={{ minWidth: 250 }}
+                onKeyDown={e => e.key === 'Enter' && handleSearchClient()}
               />
-              <Button variant="contained" onClick={searchClient} disabled={searchingClient}>
+              <Button variant="contained" onClick={handleSearchClient} disabled={searchingClient}>
                 {searchingClient ? <CircularProgress size={20} /> : 'Buscar'}
               </Button>
             </Box>
@@ -280,60 +254,50 @@ export default function EmployeePanel() {
             )}
 
             <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-              <TextField
-                select label="Película" size="small"
-                value={selectedMovieId}
-                onChange={e => { setSelectedMovieId(e.target.value); setSelectedDate(''); setSelectedShowtime(''); setSelectedSeat(null) }}
-                slotProps={{ select: { native: true } }}
-                sx={{ minWidth: 250 }}
-              >
-                <option value="">Seleccionar...</option>
-                {filteredMovies.map(m => (
-                  <option key={m._id} value={m._id}>{m.title}</option>
-                ))}
-              </TextField>
-
-              {selectedScreening && (
-                <TextField
-                  type="date" label="Fecha" size="small"
-                  value={selectedDate}
-                  onChange={e => { setSelectedDate(e.target.value); setSelectedShowtime(''); setSelectedSeat(null) }}
-                  slotProps={{
-                    inputLabel: { shrink: true },
-                    htmlInput: {
-                      min: selectedScreening.startDate?.split('T')[0] || todayStr,
-                      max: selectedScreening.endDate?.split('T')[0] || ''
-                    }
-                  }}
-                  sx={{ minWidth: 200 }}
-                />
-              )}
-
-              {selectedDate && selectedScreening?.showtimes?.length > 0 && (
-                <TextField
-                  select label="Horario" size="small"
-                  value={selectedShowtime}
-                  onChange={e => { setSelectedShowtime(e.target.value); setSelectedSeat(null) }}
-                  slotProps={{ select: { native: true } }}
-                  sx={{ minWidth: 180 }}
+              <FormControl size="small" sx={{ minWidth: 250 }}>
+                <InputLabel>Película</InputLabel>
+                <Select
+                  value={selectedMovieId}
+                  label="Película"
+                  onChange={e => { setSelectedMovieId(e.target.value); setSelectedScreeningKey(''); setSelectedSeat(null) }}
                 >
-                  <option value="">Seleccionar...</option>
-                  {selectedScreening.showtimes.map(st => (
-                    <option key={st.time} value={st.time}>
-                      {st.time} ({st.totalSeats - st.bookedSeats}/{st.totalSeats} libres)
-                    </option>
+                  <MenuItem value="">Seleccionar...</MenuItem>
+                  {filteredMovies.map(m => (
+                    <MenuItem key={m._id} value={m._id}>{m.title}</MenuItem>
                   ))}
-                </TextField>
+                </Select>
+              </FormControl>
+
+              {storeScreenings.length > 0 && (
+                <FormControl size="small" sx={{ minWidth: 280 }}>
+                  <InputLabel>Función</InputLabel>
+                  <Select
+                    value={selectedScreeningKey}
+                    label="Función"
+                    onChange={e => { setSelectedScreeningKey(e.target.value); setSelectedSeat(null) }}
+                  >
+                    <MenuItem value="">Seleccionar...</MenuItem>
+                    {storeScreenings.map((s, idx) => {
+                      const key = `${new Date(s.date).toISOString().split('T')[0]}-${s.time}`
+                      const free = s.totalSeats - s.bookedSeats
+                      return (
+                        <MenuItem key={idx} value={key}>
+                          {new Date(s.date).toLocaleDateString('es-MX')} - {s.time} ({free}/{s.totalSeats} libres)
+                        </MenuItem>
+                      )
+                    })}
+                  </Select>
+                </FormControl>
               )}
             </Box>
 
-            {selectedShowtime && (
+            {selectedScreening && (
               <>
                 <Typography variant="subtitle2" sx={{ mt: 2 }}>
                   Selecciona un asiento:
                 </Typography>
                 <SeatMap
-                  totalSeats={10}
+                  totalSeats={selectedScreening.totalSeats}
                   bookedSeats={bookedSeats}
                   selectedSeat={selectedSeat}
                   onSelect={setSelectedSeat}

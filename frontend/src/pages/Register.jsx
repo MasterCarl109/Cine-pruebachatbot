@@ -1,7 +1,7 @@
 import { Container, Box, Typography, TextField, Button, Paper, Alert } from '@mui/material'
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { register as apiRegister } from '../services/api'
+import { clientRegister } from '../services/api'
 
 export default function RegisterPage() {
   const [name, setName] = useState('')
@@ -15,7 +15,7 @@ export default function RegisterPage() {
     e.preventDefault()
     setError('')
     try {
-      await apiRegister(email, password, name)
+      await clientRegister(email, password, name)
       setSuccess(true)
       setTimeout(() => navigate('/login'), 2000)
     } catch (err) {

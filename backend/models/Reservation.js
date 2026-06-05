@@ -2,7 +2,7 @@ const mongoose = require('mongoose')
 
 const reservationSchema = new mongoose.Schema({
     movie: { type: mongoose.Schema.Types.ObjectId, ref: 'Movie', required: true },
-    client: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    client: { type: mongoose.Schema.Types.ObjectId, ref: 'Client', required: true },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     store: { type: mongoose.Schema.Types.ObjectId, ref: 'Store', required: true },
     screeningDate: { type: Date, required: true },

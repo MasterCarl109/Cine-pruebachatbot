@@ -6,22 +6,22 @@ import { roleColors } from '../../theme'
 
 const linksByRole = {
   admin: [
-    { label: 'Dashboard', path: '/staff' },
-    { label: 'Películas', path: '/staff/peliculas' },
-    { label: 'Directores', path: '/staff/directores' },
-    { label: 'Géneros', path: '/staff/generos' },
-    { label: 'Tiendas', path: '/staff/tiendas' },
-    { label: 'Usuarios', path: '/staff/usuarios' }
+    { label: 'Dashboard', path: '/panel' },
+    { label: 'Películas', path: '/panel/p' },
+    { label: 'Directores', path: '/panel/d' },
+    { label: 'Géneros', path: '/panel/g' },
+    { label: 'Tiendas', path: '/panel/t' },
+    { label: 'Usuarios', path: '/panel/u' }
   ],
   manager: [
-    { label: 'Dashboard', path: '/staff' },
-    { label: 'Películas', path: '/staff/peliculas' },
-    { label: 'Directores', path: '/staff/directores' },
-    { label: 'Géneros', path: '/staff/generos' },
-    { label: 'Tiendas', path: '/staff/tiendas' }
+    { label: 'Dashboard', path: '/panel' },
+    { label: 'Películas', path: '/panel/p' },
+    { label: 'Directores', path: '/panel/d' },
+    { label: 'Géneros', path: '/panel/g' },
+    { label: 'Tiendas', path: '/panel/t' }
   ],
   employee: [
-    { label: 'Mi Tienda', path: '/staff/empleado' }
+    { label: 'Mi Tienda', path: '/panel/e' }
   ]
 }
 
@@ -39,7 +39,7 @@ export default function StaffNavbar() {
     <AppBar position="sticky" elevation={1} sx={{ bgcolor: roleColor.main }}>
       <Toolbar>
         <MovieIcon sx={{ mr: 1 }} />
-        <Typography variant="h6" sx={{ cursor: 'pointer', mr: 3 }} onClick={() => navigate('/staff')}>
+        <Typography variant="h6" sx={{ cursor: 'pointer', mr: 3 }} onClick={() => navigate('/panel')}>
           CineClub
         </Typography>
         <Box sx={{ display: 'flex', gap: 1, flex: 1 }}>

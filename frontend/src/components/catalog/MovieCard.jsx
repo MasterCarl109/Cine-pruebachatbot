@@ -27,15 +27,7 @@ export default function MovieCard({ movie, onClick }) {
             <Chip key={g._id} label={g.name} size="small" color="secondary" variant="outlined" />
           ))}
         </Stack>
-        {movie.availability?.length > 0 && (
-          <Box sx={{ mt: 1, pt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
-            {movie.availability.map((a) => (
-              <Typography key={a.store?._id} variant="caption" display="block" color="text.secondary">
-                {a.store?.name}: {a.copies} copia(s)
-              </Typography>
-            ))}
-          </Box>
-        )}
+
       </CardContent>
     </Card>
   )

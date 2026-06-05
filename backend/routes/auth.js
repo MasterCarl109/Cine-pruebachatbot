@@ -1,37 +1,17 @@
 const express = require('express')
-const jwt = require('jsonwebtoken')
+const rateLimit = require('express-rate-limit')
 const User = require('../models/User')
+const Session = require('../models/Session')
 
 const router = express.Router()
 
-router.post('/register', async (req, res) => {
-    try {
-        const { email, password, name } = req.body
-        if (!email || !password || !name) {
-            return res.status(400).json({ error: 'Email, contraseña y nombre son requeridos' })
-        }
-        const user = new User({ email, password, name, role: 'client' })
-        await user.save()
-
-        const token = jwt.sign(
-            { id: user._id, email: user.email, role: user.role, name: user.name, store: null },
-            process.env.JWT_SECRET,
-            { expiresIn: '24h' }
-        )
-
-        res.status(201).json({
-            token,
-            user: { email: user.email, name: user.name, role: user.role, store: null }
-        })
-    } catch (error) {
-        if (error.code === 11000) {
-            return res.status(400).json({ error: 'El email ya está registrado' })
-        }
-        res.status(400).json({ error: error.message })
-    }
+const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    message: { error: 'Demasiados intentos. Intenta de nuevo en 15 minutos.' }
 })
 
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
     try {
         const { email, password } = req.body
 
@@ -39,7 +19,7 @@ router.post('/login', async (req, res) => {
             return res.status(400).json({ error: 'Email y contraseña son requeridos' })
         }
 
-        const user = await User.findOne({ email })
+        const user = await User.findOne({ email }).populate('store', 'name')
         if (!user) {
             return res.status(401).json({ error: 'Credenciales inválidas' })
         }
@@ -48,29 +28,53 @@ router.post('/login', async (req, res) => {
             return res.status(401).json({ error: 'Cuenta desactivada. Contacta al administrador.' })
         }
 
+        if (user.role === 'client') {
+            return res.status(401).json({ error: 'Credenciales inválidas' })
+        }
+
         const isMatch = await user.comparePassword(password)
         if (!isMatch) {
             return res.status(401).json({ error: 'Credenciales inválidas' })
         }
 
-        const token = jwt.sign(
-            { id: user._id, email: user.email, role: user.role, name: user.name, store: user.store },
-            process.env.JWT_SECRET,
-            { expiresIn: '24h' }
-        )
+        const session = await Session.create({
+            user: {
+                id: user._id,
+                email: user.email,
+                name: user.name,
+                role: user.role,
+                store: user.store?._id || user.store,
+                type: 'staff'
+            }
+        })
+
+        res.cookie('token', session.token, {
+            httpOnly: true,
+            sameSite: 'strict',
+            maxAge: 24 * 60 * 60 * 1000
+        })
 
         res.json({
-            token,
             user: {
                 email: user.email,
                 name: user.name,
                 role: user.role,
-                store: user.store
+                store: user.store,
+                type: 'staff'
             }
         })
     } catch (error) {
         res.status(500).json({ error: 'Error interno del servidor' })
     }
+})
+
+router.post('/logout', async (req, res) => {
+    const token = req.cookies?.token
+    if (token) {
+        await Session.deleteOne({ token })
+    }
+    res.clearCookie('token', { httpOnly: true, sameSite: 'strict' })
+    res.json({ mensaje: 'Sesión cerrada' })
 })
 
 module.exports = router
