@@ -1,5 +1,6 @@
 const express = require('express')
 const User = require('../models/User')
+const { userRules, userUpdateRules } = require('../middleware/validate')
 
 const router = express.Router()
 
@@ -22,12 +23,9 @@ router.get('/:id', async (req, res) => {
     }
 })
 
-router.post('/', async (req, res) => {
+router.post('/', userRules, async (req, res) => {
     try {
         const { email, password, name, role, store } = req.body
-        if (!email || !password || !name || !role) {
-            return res.status(400).json({ error: 'Email, password, nombre y rol son requeridos' })
-        }
         if (role === 'client') {
             return res.status(400).json({ error: 'Los clientes se registran desde el portal público' })
         }
@@ -47,7 +45,7 @@ router.post('/', async (req, res) => {
     }
 })
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', userUpdateRules, async (req, res) => {
     try {
         const { email, name, role, store, active } = req.body
         const updates = {}

@@ -1,11 +1,24 @@
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434'
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama3.2:1b'
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:3b'
+const TIMEOUT_MS = 15000
+const CLASSIFY_MODEL = 'deepseek-r1:7b'
+
+async function fetchWithTimeout(url, options, timeoutMs = TIMEOUT_MS) {
+    const controller = new AbortController()
+    const id = setTimeout(() => controller.abort(), timeoutMs)
+    try {
+        const response = await fetch(url, { ...options, signal: controller.signal })
+        return response
+    } finally {
+        clearTimeout(id)
+    }
+}
 
 async function generateResponse(systemPrompt, context, userMessage) {
     const contextText = buildContextText(context)
     const prompt = `${systemPrompt}\n\nInformación del catálogo:\n${contextText}\n\nPregunta del usuario: ${userMessage}\n\nRespuesta (texto natural, sin JSON):`
 
-    const response = await fetch(`${OLLAMA_URL}/api/generate`, {
+    const response = await fetchWithTimeout(`${OLLAMA_URL}/api/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -32,12 +45,14 @@ function buildContextText(context) {
         const sorted = [...context.peliculas_encontradas].sort((a, b) => b.popularidad - a.popularidad)
         parts.push('Películas disponibles en el catálogo:')
         sorted.forEach(m => {
-            let line = `- "${m.titulo}" - ${m.sinopsis}. Director: ${m.director}. Géneros: ${m.generos?.join(', ') || 'N/A'}. Popularidad: ${m.popularidad}.`
+            let line = `- "${m.titulo}" - ${m.sinopsis}. Director: ${m.director}. Géneros: ${m.generos?.join(', ') || 'N/A'}. Precio: $${m.precio}. Popularidad: ${m.popularidad}.`
+            if (m.ofertas?.length) {
+                line += ` Ofertas: ${m.ofertas.map(o => `${o.descripcion} (${o.descuento} de descuento en ${o.tienda}, vigente del ${o.vigencia})`).join(', ')}.`
+            }
             if (m.disponibilidad?.length) {
-                line += ` Disponible en: ${m.disponibilidad.map(d => {
-                    const horarios = d.horarios?.map(h => `${h.hora} (${h.disponibles}/${h.total} asientos libres)`).join(', ') || ''
-                    return `${d.tienda} (${d.copias} copias, del ${d.desde} al ${d.hasta}, horarios: ${horarios})`
-                }).join(', ')}.`
+                line += ` Disponible en: ${m.disponibilidad.map(d =>
+                    `${d.tienda} - ${d.fecha} a las ${d.hora} (${d.disponibles} asientos libres de ${d.total})`
+                ).join('; ')}.`
             }
             parts.push(line)
         })
@@ -66,8 +81,6 @@ function cleanResponse(text) {
     return clean || text
 }
 
-const CLASSIFY_MODEL = 'deepseek-r1:7b'
-
 async function classifyIntent(userMessage) {
     const prompt = `[INST] <<SYS>>
 You are a strict classifier. Answer ONLY with the word "catalogo" or "otro".
@@ -78,7 +91,7 @@ You are a strict classifier. Answer ONLY with the word "catalogo" or "otro".
 Mensaje: "${userMessage}"
 Respuesta: [/INST]`
 
-    const response = await fetch(`${OLLAMA_URL}/api/generate`, {
+    const response = await fetchWithTimeout(`${OLLAMA_URL}/api/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

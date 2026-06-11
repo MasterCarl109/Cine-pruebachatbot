@@ -6,6 +6,8 @@ const Genre = require('./models/Genre')
 const Store = require('./models/Store')
 const User = require('./models/User')
 const Client = require('./models/Client')
+const Reservation = require('./models/Reservation')
+const ChatSession = require('./models/ChatSession')
 
 const directors = [
     { name: 'Alfred Hitchcock', nationality: 'Británica', biography: 'Director británico conocido como el maestro del suspense.' },
@@ -25,9 +27,36 @@ const genres = [
 ]
 
 const stores = [
-    { name: 'Centro', address: 'Av. Principal 123, Centro', phone: '555-1000' },
-    { name: 'Norte', address: 'Calle Norte 456, Colonia del Valle', phone: '555-2000' },
-    { name: 'Sur', address: 'Boulevard Sur 789, Colonia Jardín', phone: '555-3000' }
+    {
+        name: 'Centro', address: 'Av. Principal 123, Centro', phone: '555-1000',
+        rooms: [
+            { name: 'Sala 1', capacity: 8 },
+            { name: 'Sala 2', capacity: 10 },
+            { name: 'Sala 3', capacity: 10 },
+            { name: 'Sala 4', capacity: 12 },
+            { name: 'Sala 5', capacity: 8 }
+        ]
+    },
+    {
+        name: 'Norte', address: 'Calle Norte 456, Colonia del Valle', phone: '555-2000',
+        rooms: [
+            { name: 'Sala 1', capacity: 10 },
+            { name: 'Sala 2', capacity: 8 },
+            { name: 'Sala 3', capacity: 10 },
+            { name: 'Sala 4', capacity: 12 },
+            { name: 'Sala 5', capacity: 8 }
+        ]
+    },
+    {
+        name: 'Sur', address: 'Boulevard Sur 789, Colonia Jardín', phone: '555-3000',
+        rooms: [
+            { name: 'Sala 1', capacity: 10 },
+            { name: 'Sala 2', capacity: 8 },
+            { name: 'Sala 3', capacity: 10 },
+            { name: 'Sala 4', capacity: 12 },
+            { name: 'Sala 5', capacity: 8 }
+        ]
+    }
 ]
 
 function daysFromNow(days) {
@@ -37,12 +66,12 @@ function daysFromNow(days) {
     return d
 }
 
-const generateScreenings = (storeId, dayOffsets, times) => {
+function g(storeId, room, cap, dayOffsets, times) {
     const screenings = []
     for (const offset of dayOffsets) {
         const date = daysFromNow(offset)
         for (const time of times) {
-            screenings.push({ store: storeId, date, time, totalSeats: 10, bookedSeats: 0 })
+            screenings.push({ store: storeId, room, date, time, totalSeats: cap, bookedSeats: 0 })
         }
     }
     return screenings
@@ -59,7 +88,9 @@ const seed = async () => {
             Genre.deleteMany({}),
             Store.deleteMany({}),
             User.deleteMany({}),
-            Client.deleteMany({})
+            Client.deleteMany({}),
+            Reservation.deleteMany({}),
+            ChatSession.deleteMany({})
         ])
         console.log('Colecciones limpiadas')
 
@@ -71,136 +102,118 @@ const seed = async () => {
         const [terror, comedia, drama, sciFi, suspenso, accion] = createdGenres
         const [centro, norte, sur] = createdStores
 
+        // Scheduling: each movie gets a dedicated room per store (no time conflicts)
         const movies = [
             {
-                title: 'Psicosis',
+                title: 'Psicosis', duration: 109, rating: 'R', price: 65,
                 releaseDate: new Date('1960-09-08'),
                 synopsis: 'Una secretaria huye con dinero robado y se encuentra con un misterioso motel.',
-                duration: 109,
-                rating: 'R',
-                director: hitchcock._id,
-                genres: [terror._id, suspenso._id],
+                director: hitchcock._id, genres: [terror._id, suspenso._id],
                 screenings: [
-                    ...generateScreenings(centro._id, [-10, -5, 0, 5, 10], ['16:00', '18:00', '20:00']),
-                    ...generateScreenings(norte._id, [-10, -5, 0, 5], ['16:00', '20:00'])
+                    ...g(centro._id, 'Sala 1', 8, [-10, -5, 0, 5, 10], ['16:00', '18:00', '20:00']),
+                    ...g(norte._id, 'Sala 2', 8, [-10, -5, 0, 5], ['16:00', '20:00'])
                 ]
             },
             {
-                title: 'Los pájaros',
+                title: 'Los pájaros', duration: 119, rating: 'PG-13', price: 60,
                 releaseDate: new Date('1963-03-28'),
                 synopsis: 'Aves de todo tipo comienzan a atacar sin razón aparente a los habitantes de un pueblo.',
-                duration: 119,
-                rating: 'PG-13',
-                director: hitchcock._id,
-                genres: [terror._id, suspenso._id],
+                director: hitchcock._id, genres: [terror._id, suspenso._id],
                 screenings: [
-                    ...generateScreenings(centro._id, [-30, -25, -20, -15], ['18:00']),
-                    ...generateScreenings(sur._id, [-30, -25, -20, -15], ['18:00', '20:00'])
+                    ...g(sur._id, 'Sala 2', 8, [-30, -25, -20, -15], ['18:00', '20:00'])
                 ]
             },
             {
-                title: 'La ventana indiscreta',
+                title: 'La ventana indiscreta', duration: 112, rating: 'PG', price: 60,
                 releaseDate: new Date('1954-09-01'),
                 synopsis: 'Un fotógrafo confinado a una silla de ruedas cree haber presenciado un asesinato.',
-                duration: 112,
-                rating: 'PG',
-                director: hitchcock._id,
-                genres: [suspenso._id, drama._id],
+                director: hitchcock._id, genres: [suspenso._id, drama._id],
                 screenings: [
-                    ...generateScreenings(norte._id, [-5, 0], ['16:00', '18:00']),
-                    ...generateScreenings(sur._id, [-5, 0], ['20:00'])
+                    ...g(sur._id, 'Sala 5', 8, [-5, 0], ['20:00'])
                 ]
             },
             {
-                title: 'Inception',
+                title: 'Inception', duration: 148, rating: 'PG-13', price: 120,
                 releaseDate: new Date('2010-07-16'),
                 synopsis: 'Un ladrón especializado en extraer secretos del subconsciente a través de los sueños.',
-                duration: 148,
-                rating: 'PG-13',
-                director: nolan._id,
-                genres: [sciFi._id, accion._id, suspenso._id],
+                director: nolan._id, genres: [sciFi._id, accion._id, suspenso._id],
+                offers: [
+                    { store: centro._id, description: 'Combo jueves', discountPercent: 15, startDate: daysFromNow(-1), endDate: daysFromNow(30), active: true },
+                    { store: sur._id, description: 'Combo jueves', discountPercent: 15, startDate: daysFromNow(-1), endDate: daysFromNow(30), active: true }
+                ],
                 screenings: [
-                    ...generateScreenings(centro._id, [-3, 0, 3, 7, 10, 14], ['14:00', '16:00', '18:00', '20:00']),
-                    ...generateScreenings(norte._id, [-3, 0, 3, 7, 10, 14], ['16:00', '18:00', '20:00']),
-                    ...generateScreenings(sur._id, [-3, 0, 3, 7, 10, 14], ['16:00', '20:00'])
+                    ...g(centro._id, 'Sala 2', 10, [-3, 0, 3, 7, 10, 14], ['14:00', '16:00', '18:00', '20:00']),
+                    ...g(norte._id, 'Sala 1', 10, [-3, 0, 3, 7, 10, 14], ['16:00', '18:00', '20:00']),
+                    ...g(sur._id, 'Sala 1', 10, [-3, 0, 3, 7, 10, 14], ['16:00', '20:00'])
                 ]
             },
             {
-                title: 'Interestelar',
+                title: 'Interestelar', duration: 169, rating: 'PG-13', price: 120,
                 releaseDate: new Date('2014-11-07'),
                 synopsis: 'Un equipo de exploradores viaja a través de un agujero de gusano en busca de un nuevo hogar para la humanidad.',
-                duration: 169,
-                rating: 'PG-13',
-                director: nolan._id,
-                genres: [sciFi._id, drama._id],
+                director: nolan._id, genres: [sciFi._id, drama._id],
                 screenings: [
-                    ...generateScreenings(centro._id, [5, 10, 15, 20, 25], ['16:00', '18:00', '20:00']),
-                    ...generateScreenings(sur._id, [5, 10, 15, 20, 25], ['18:00', '20:00'])
+                    ...g(sur._id, 'Sala 2', 8, [5, 10, 15, 20, 25], ['18:00', '20:00'])
                 ]
             },
             {
-                title: 'Lady Bird',
+                title: 'Lady Bird', duration: 94, rating: 'R', price: 55,
                 releaseDate: new Date('2017-09-01'),
                 synopsis: 'Una adolescente navega su último año de preparatoria y su relación con su madre.',
-                duration: 94,
-                rating: 'R',
-                director: gerwig._id,
-                genres: [comedia._id, drama._id],
+                director: gerwig._id, genres: [comedia._id, drama._id],
+                offers: [
+                    { store: norte._id, description: 'Lunes de independientes', discountPercent: 15, startDate: daysFromNow(-1), endDate: daysFromNow(30), active: true }
+                ],
                 screenings: [
-                    ...generateScreenings(norte._id, [-5, -2, 0, 3, 7], ['16:00', '18:00', '20:00'])
+                    ...g(norte._id, 'Sala 3', 10, [-5, -2, 0, 3, 7], ['16:00', '18:00', '20:00'])
                 ]
             },
             {
-                title: 'Barbie',
+                title: 'Barbie', duration: 114, rating: 'PG-13', price: 90,
                 releaseDate: new Date('2023-07-21'),
                 synopsis: 'Barbie y Ken viven en un mundo perfecto hasta que una crisis existencial los lleva al mundo real.',
-                duration: 114,
-                rating: 'PG-13',
-                director: gerwig._id,
-                genres: [comedia._id],
+                director: gerwig._id, genres: [comedia._id],
+                offers: [
+                    { store: centro._id, description: 'Oferta de verano', discountPercent: 20, startDate: daysFromNow(-1), endDate: daysFromNow(30), active: true },
+                    { store: norte._id, description: 'Oferta de verano', discountPercent: 20, startDate: daysFromNow(-1), endDate: daysFromNow(30), active: true },
+                    { store: sur._id, description: 'Oferta de verano', discountPercent: 20, startDate: daysFromNow(-1), endDate: daysFromNow(30), active: true }
+                ],
                 screenings: [
-                    ...generateScreenings(centro._id, [30, 35, 40, 45], ['14:00', '16:00', '18:00', '20:00']),
-                    ...generateScreenings(norte._id, [30, 35, 40], ['16:00', '18:00']),
-                    ...generateScreenings(sur._id, [30, 35, 40], ['16:00', '20:00'])
+                    ...g(centro._id, 'Sala 3', 10, [30, 35, 40, 45], ['14:00', '16:00', '18:00', '20:00']),
+                    ...g(norte._id, 'Sala 4', 12, [30, 35, 40], ['16:00', '18:00']),
+                    ...g(sur._id, 'Sala 4', 12, [30, 35, 40], ['16:00', '20:00'])
                 ]
             },
             {
-                title: 'El laberinto del fauno',
+                title: 'El laberinto del fauno', duration: 118, rating: 'R', price: 80,
                 releaseDate: new Date('2006-10-11'),
                 synopsis: 'En la España de 1944, una niña descubre un mundo mágico y misterioso.',
-                duration: 118,
-                rating: 'R',
-                director: delToro._id,
-                genres: [drama._id, terror._id],
+                director: delToro._id, genres: [drama._id, terror._id],
                 screenings: [
-                    ...generateScreenings(centro._id, [0, 3, 7, 10, 14], ['16:00', '18:00', '20:00']),
-                    ...generateScreenings(sur._id, [0, 3, 7, 10, 14], ['16:00', '20:00'])
+                    ...g(centro._id, 'Sala 5', 8, [0, 3, 7, 10, 14], ['16:00', '18:00', '20:00']),
+                    ...g(sur._id, 'Sala 3', 10, [0, 3, 7, 10, 14], ['16:00', '20:00'])
                 ]
             },
             {
-                title: 'La forma del agua',
+                title: 'La forma del agua', duration: 123, rating: 'R', price: 80,
                 releaseDate: new Date('2017-12-01'),
                 synopsis: 'Una conserje de un laboratorio secreto se enamora de una criatura anfibia.',
-                duration: 123,
-                rating: 'R',
-                director: delToro._id,
-                genres: [drama._id],
+                director: delToro._id, genres: [drama._id],
                 screenings: [
-                    ...generateScreenings(norte._id, [-10, -7, -3], ['18:00', '20:00'])
+                    ...g(norte._id, 'Sala 5', 8, [-10, -7, -3], ['18:00', '20:00'])
                 ]
             },
             {
-                title: 'Haz lo correcto',
+                title: 'Haz lo correcto', duration: 120, rating: 'R', price: 70,
                 releaseDate: new Date('1989-06-30'),
                 synopsis: 'Un día de verano en un barrio de Brooklyn, las tensiones raciales alcanzan su punto crítico.',
-                duration: 120,
-                rating: 'R',
-                director: spikeLee._id,
-                genres: [drama._id, comedia._id],
+                director: spikeLee._id, genres: [drama._id, comedia._id],
+                offers: [
+                    { store: centro._id, description: 'Clásico del mes', discountPercent: 50, startDate: daysFromNow(-1), endDate: daysFromNow(30), active: true }
+                ],
                 screenings: [
-                    ...generateScreenings(centro._id, [0, 3, 7, 10], ['14:00', '16:00', '18:00', '20:00']),
-                    ...generateScreenings(norte._id, [0, 3, 7, 10], ['16:00', '18:00']),
-                    ...generateScreenings(sur._id, [0, 3, 7, 10], ['18:00', '20:00'])
+                    ...g(centro._id, 'Sala 4', 12, [0, 3, 7, 10], ['14:00', '16:00', '18:00', '20:00']),
+                    ...g(norte._id, 'Sala 4', 12, [0, 3, 7, 10], ['16:00', '18:00'])
                 ]
             }
         ]
@@ -208,26 +221,27 @@ const seed = async () => {
         const createdMovies = await Movie.insertMany(movies)
         console.log('Películas insertadas')
 
-        const [centroStore, norteStore, surStore] = createdStores
-
         const users = await User.create([
             { email: 'admin@cineclub.com', password: 'admin123', name: 'Admin Principal', role: 'admin' },
-            { email: 'manager.centro@cineclub.com', password: 'manager123', name: 'Carlos Gómez', role: 'manager', store: centroStore._id },
-            { email: 'manager.sur@cineclub.com', password: 'manager123', name: 'María López', role: 'manager', store: surStore._id },
-            { email: 'empleado.norte@cineclub.com', password: 'empleado123', name: 'Pedro Ramírez', role: 'employee', store: norteStore._id }
+            { email: 'manager.centro@cineclub.com', password: 'manager123', name: 'Carlos Gómez', role: 'manager', store: centro._id },
+            { email: 'manager.sur@cineclub.com', password: 'manager123', name: 'María López', role: 'manager', store: sur._id },
+            { email: 'empleado.norte@cineclub.com', password: 'empleado123', name: 'Pedro Ramírez', role: 'employee', store: norte._id }
         ])
 
-        const clientUser = await Client.create({ email: 'cliente@cineclub.com', password: 'cliente123', name: 'Ana Torres' })
+        const clientUser = await Client.create({
+            email: 'cliente@cineclub.com',
+            password: 'cliente123',
+            name: 'Ana Torres',
+            virtualCard: { cardNumber: '4000123456789012', pin: '123456', balance: 100000 }
+        })
         console.log('Usuarios creados:')
         console.log('  admin@cineclub.com / admin123 (admin)')
         console.log('  manager.centro@cineclub.com / manager123 (manager - Centro)')
         console.log('  manager.sur@cineclub.com / manager123 (manager - Sur)')
         console.log('  empleado.norte@cineclub.com / empleado123 (employee - Norte)')
+        console.log('  cliente@cineclub.com / cliente123 / PIN 123456 / Tarjeta 4000123456789012 (client)')
 
-        const [adminUser, mgrCentro, mgrSur, empNorte] = users
-
-        const Reservation = require('./models/Reservation')
-        await Reservation.deleteMany({})
+        const [, mgrCentro, , empNorte] = users
 
         const inception = createdMovies.find(m => m.title === 'Inception')
         const hazLoCorrecto = createdMovies.find(m => m.title === 'Haz lo correcto')
@@ -236,52 +250,75 @@ const seed = async () => {
 
         const today = daysFromNow(0)
 
+        const calcPrice = (movie, storeId, ticketType) => {
+            let price = movie.price
+            const activeOffer = movie.offers?.find(o =>
+                o.active &&
+                (!o.store || String(o.store) === String(storeId)) &&
+                o.startDate <= new Date() && o.endDate >= new Date()
+            )
+            if (activeOffer) price = price - (price * activeOffer.discountPercent / 100)
+            if (ticketType === 'child') price = price - (price * 0.30)
+            return Math.round(price)
+        }
+
         await Reservation.create([
             {
                 movie: inception._id, client: clientUser._id, createdBy: mgrCentro._id,
-                store: centroStore._id, screeningDate: today, showtime: '18:00',
-                seatNumber: 1, status: 'active'
+                store: centro._id, room: 'Sala 2',
+                screeningDate: today, showtime: '18:00', seatNumber: 1, ticketType: 'adult',
+                amount: calcPrice(inception, centro._id, 'adult'), paymentStatus: 'paid', status: 'active'
             },
             {
                 movie: inception._id, client: clientUser._id, createdBy: mgrCentro._id,
-                store: centroStore._id, screeningDate: today, showtime: '18:00',
-                seatNumber: 2, status: 'active'
+                store: centro._id, room: 'Sala 2',
+                screeningDate: today, showtime: '18:00', seatNumber: 2, ticketType: 'child',
+                amount: calcPrice(inception, centro._id, 'child'), paymentStatus: 'paid', status: 'active'
             },
             {
                 movie: hazLoCorrecto._id, client: clientUser._id, createdBy: mgrCentro._id,
-                store: centroStore._id, screeningDate: today, showtime: '16:00',
-                seatNumber: 3, status: 'active'
+                store: centro._id, room: 'Sala 4',
+                screeningDate: today, showtime: '16:00', seatNumber: 3, ticketType: 'adult',
+                amount: calcPrice(hazLoCorrecto, centro._id, 'adult'), paymentStatus: 'paid', status: 'active'
             },
             {
                 movie: psicosis._id, client: clientUser._id, createdBy: mgrCentro._id,
-                store: centroStore._id, screeningDate: today, showtime: '20:00',
-                seatNumber: 5, status: 'active'
+                store: centro._id, room: 'Sala 1',
+                screeningDate: today, showtime: '20:00', seatNumber: 5, ticketType: 'adult',
+                amount: calcPrice(psicosis, centro._id, 'adult'), paymentStatus: 'paid', status: 'active'
             },
             {
                 movie: ladyBird._id, client: clientUser._id, createdBy: empNorte._id,
-                store: norteStore._id, screeningDate: today, showtime: '18:00',
-                seatNumber: 1, status: 'cancelled'
+                store: norte._id, room: 'Sala 3',
+                screeningDate: today, showtime: '18:00', seatNumber: 1, ticketType: 'adult',
+                amount: calcPrice(ladyBird, norte._id, 'adult'), paymentStatus: 'refunded', status: 'cancelled'
             }
         ])
         console.log('Reservas de muestra creadas')
 
-        const updateBookedSeats = async (movie, store, date, time, inc) => {
+        const updateBookedSeats = async (movie, storeId, room, date, time, inc) => {
             await Movie.findOneAndUpdate(
-                { _id: movie._id, 'screenings.store': store._id, 'screenings.date': date, 'screenings.time': time },
+                { _id: movie._id, 'screenings.store': storeId, 'screenings.room': room, 'screenings.date': date, 'screenings.time': time },
                 { $inc: { 'screenings.$[s].bookedSeats': inc } },
-                { arrayFilters: [{ 's.store': store._id, 's.date': date, 's.time': time }] }
+                { arrayFilters: [{ 's.store': storeId, 's.room': room, 's.date': date, 's.time': time }] }
             )
         }
 
-        await updateBookedSeats(inception, centroStore, today, '18:00', 2)
-        await updateBookedSeats(hazLoCorrecto, centroStore, today, '16:00', 1)
-        await updateBookedSeats(psicosis, centroStore, today, '20:00', 1)
+        await updateBookedSeats(inception, centro._id, 'Sala 2', today, '18:00', 2)
+        await updateBookedSeats(hazLoCorrecto, centro._id, 'Sala 4', today, '16:00', 1)
+        await updateBookedSeats(psicosis, centro._id, 'Sala 1', today, '20:00', 1)
         console.log('Asientos actualizados en screenings')
+
+        const paidReservations = await Reservation.find({ client: clientUser._id, paymentStatus: 'paid' })
+        const totalSpent = paidReservations.reduce((sum, r) => sum + r.amount, 0)
+        await Client.findByIdAndUpdate(clientUser._id, { $inc: { 'virtualCard.balance': -totalSpent } })
+        console.log(`Saldo del cliente actualizado: -${totalSpent}`)
 
         console.log('Seed completado exitosamente')
         process.exit(0)
     } catch (error) {
-        console.error('Error en seed:', error)
+        console.error('Error en seed:', error.message)
+        console.error(error)
         process.exit(1)
     }
 }

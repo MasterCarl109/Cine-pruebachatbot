@@ -37,7 +37,8 @@ async function isCatalogRelated(message) {
         return intent === 'catalogo'
     } catch (error) {
         console.error('Error en clasificación Ollama:', error.message)
-        return true
+        // Fallback: si Ollama falla (timeout/error), solo usa blacklist
+        return !hasBlacklistedWords(message)
     }
 }
 

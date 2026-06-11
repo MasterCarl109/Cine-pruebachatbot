@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Container, Typography, Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Select, MenuItem, InputLabel, FormControl, IconButton, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, Box } from '@mui/material'
-import { getMovies, createMovie, updateMovie, deleteMovie, getDirectors, getGenres, getStores } from '../services/api'
+import { getMovies, getMovie, createMovie, updateMovie, deleteMovie, getDirectors, getGenres, getStores } from '../services/api'
 import DeleteIcon from '@mui/icons-material/Delete'
 import EditIcon from '@mui/icons-material/Edit'
 import AddIcon from '@mui/icons-material/Add'
+import OffersManager from '../components/admin/OffersManager'
 
 const emptyForm = { title: '', releaseDate: '', synopsis: '', duration: '', rating: 'PG-13', director: '', genres: [] }
 
@@ -28,6 +29,13 @@ export default function AdminMovies() {
   const [form, setForm] = useState(emptyForm)
   const [editing, setEditing] = useState(null)
   const [screenings, setScreenings] = useState([])
+  const [movieData, setMovieData] = useState(null)
+
+  const fetchMovieOffers = useCallback(async (id) => {
+    if (!id) return
+    const { data } = await getMovie(id)
+    setMovieData(data)
+  }, [])
 
   const fetchData = useCallback(async () => {
     const [m, d, g, s] = await Promise.all([
@@ -57,6 +65,7 @@ export default function AdminMovies() {
     setEditing(null)
     setForm(emptyForm)
     setScreenings([])
+    setMovieData(null)
     fetchData()
   }
 
@@ -72,13 +81,16 @@ export default function AdminMovies() {
     })
     setScreenings(movie.screenings?.map(s => ({
       store: s.store?._id || s.store,
+      room: s.room || '',
       date: s.date ? s.date.slice(0, 10) : '',
       time: s.time || '',
       totalSeats: s.totalSeats || 10,
       bookedSeats: s.bookedSeats || 0
     })) || [])
     setEditing(movie._id)
+    setMovieData(movie)
     setDialog(true)
+    fetchMovieOffers(movie._id)
   }
 
   const handleDelete = async (id) => {
@@ -89,11 +101,20 @@ export default function AdminMovies() {
   }
 
   const updateScreening = (idx, field, value) => {
-    setScreenings(prev => prev.map((s, i) => i === idx ? { ...s, [field]: value } : s))
+    setScreenings(prev => prev.map((s, i) => {
+      if (i !== idx) return s
+      const updated = { ...s, [field]: value }
+      if (field === 'room') {
+        const store = stores.find(st => st._id === s.store)
+        const room = store?.rooms?.find(r => r._id === value || r.name === value)
+        if (room) updated.totalSeats = room.capacity
+      }
+      return updated
+    }))
   }
 
   const addScreening = (storeId) => {
-    setScreenings(prev => [...prev, { store: storeId, date: '', time: '', totalSeats: 10 }])
+    setScreenings(prev => [...prev, { store: storeId, room: '', date: '', time: '', totalSeats: 10 }])
   }
 
   const removeScreening = (idx) => {
@@ -175,14 +196,20 @@ export default function AdminMovies() {
                   const globalIdx = screenings.indexOf(s)
                   return (
                     <Box key={idx} sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 1 }}>
-                      <TextField size="small" type="date" label="Fecha" value={s.date} onChange={(e) => updateScreening(globalIdx, 'date', e.target.value)} slotProps={{ inputLabel: { shrink: s.date ? true : undefined } }} sx={{ width: 180 }} />
-                      <FormControl size="small" sx={{ width: 120 }}>
+                      <TextField size="small" type="date" label="Fecha" value={s.date} onChange={(e) => updateScreening(globalIdx, 'date', e.target.value)} slotProps={{ inputLabel: { shrink: s.date ? true : undefined } }} sx={{ width: 160 }} />
+                      <FormControl size="small" sx={{ width: 100 }}>
                         <InputLabel>Hora</InputLabel>
                         <Select value={s.time} label="Hora" onChange={(e) => updateScreening(globalIdx, 'time', e.target.value)}>
                           {times.map((t) => <MenuItem key={t} value={t}>{t}</MenuItem>)}
                         </Select>
                       </FormControl>
-                      <TextField size="small" type="number" label="Asientos" value={s.totalSeats} onChange={(e) => updateScreening(globalIdx, 'totalSeats', Number(e.target.value))} sx={{ width: 110 }} />
+                      <FormControl size="small" sx={{ width: 120 }}>
+                        <InputLabel>Sala</InputLabel>
+                        <Select value={s.room} label="Sala" onChange={(e) => updateScreening(globalIdx, 'room', e.target.value)}>
+                          {(store.rooms || []).map((r) => <MenuItem key={r._id} value={r.name}>{r.name} ({r.capacity} asientos)</MenuItem>)}
+                        </Select>
+                      </FormControl>
+                      <TextField size="small" type="number" label="Asientos" value={s.totalSeats} onChange={(e) => updateScreening(globalIdx, 'totalSeats', Number(e.target.value))} sx={{ width: 100 }} />
                       <IconButton size="small" color="error" onClick={() => removeScreening(globalIdx)}><DeleteIcon /></IconButton>
                     </Box>
                   )
@@ -193,6 +220,10 @@ export default function AdminMovies() {
               </Box>
             )
           })}
+
+          {movieData && (
+            <OffersManager movie={movieData} stores={stores} onUpdate={() => fetchMovieOffers(editing)} />
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDialog(false)}>Cancelar</Button>

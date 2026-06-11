@@ -1,6 +1,7 @@
 const express = require('express')
 const Genre = require('../models/Genre')
 const { authenticate, requireRole } = require('../middleware/auth')
+const { genreRules, genreUpdateRules } = require('../middleware/validate')
 
 const router = express.Router()
 
@@ -23,7 +24,7 @@ router.get('/:id', async (req, res) => {
     }
 })
 
-router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+router.post('/', authenticate, requireRole('admin', 'manager'), genreRules, async (req, res) => {
     try {
         const genre = new Genre(req.body)
         await genre.save()
@@ -33,7 +34,7 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
     }
 })
 
-router.put('/:id', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+router.put('/:id', authenticate, requireRole('admin', 'manager'), genreUpdateRules, async (req, res) => {
     try {
         const genre = await Genre.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true })
         if (!genre) return res.status(404).json({ error: 'Género no encontrado' })

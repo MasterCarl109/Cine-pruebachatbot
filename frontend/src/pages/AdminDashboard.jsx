@@ -1,17 +1,21 @@
-import { Container, Grid, Paper, Typography, Button } from '@mui/material'
+import { useState, useEffect } from 'react'
+import { Container, Grid, Paper, Typography, Button, Badge } from '@mui/material'
 import { useNavigate } from 'react-router-dom'
 import MovieIcon from '@mui/icons-material/Movie'
 import PersonIcon from '@mui/icons-material/Person'
 import CategoryIcon from '@mui/icons-material/Category'
 import StoreIcon from '@mui/icons-material/Store'
 import GroupIcon from '@mui/icons-material/Group'
+import SupportAgentIcon from '@mui/icons-material/SupportAgent'
 import { useAuth } from '../context/AuthContext'
+import { getChatSessions } from '../services/api'
 
 const adminCards = [
   { label: 'Películas', icon: <MovieIcon sx={{ fontSize: 48 }} />, path: '/panel/p', color: '#1565c0' },
   { label: 'Directores', icon: <PersonIcon sx={{ fontSize: 48 }} />, path: '/panel/d', color: '#2e7d32' },
   { label: 'Géneros', icon: <CategoryIcon sx={{ fontSize: 48 }} />, path: '/panel/g', color: '#ed6c02' },
   { label: 'Tiendas', icon: <StoreIcon sx={{ fontSize: 48 }} />, path: '/panel/t', color: '#9c27b0' },
+  { label: 'Chat en vivo', icon: <SupportAgentIcon sx={{ fontSize: 48 }} />, path: '/panel/chat', color: '#2e7d32' },
   { label: 'Usuarios', icon: <GroupIcon sx={{ fontSize: 48 }} />, path: '/panel/u', color: '#e91e63' }
 ]
 
@@ -19,13 +23,27 @@ const managerCards = [
   { label: 'Películas', icon: <MovieIcon sx={{ fontSize: 48 }} />, path: '/panel/p', color: '#1565c0' },
   { label: 'Directores', icon: <PersonIcon sx={{ fontSize: 48 }} />, path: '/panel/d', color: '#2e7d32' },
   { label: 'Géneros', icon: <CategoryIcon sx={{ fontSize: 48 }} />, path: '/panel/g', color: '#ed6c02' },
-  { label: 'Tiendas', icon: <StoreIcon sx={{ fontSize: 48 }} />, path: '/panel/t', color: '#9c27b0' }
+  { label: 'Tiendas', icon: <StoreIcon sx={{ fontSize: 48 }} />, path: '/panel/t', color: '#9c27b0' },
+  { label: 'Chat en vivo', icon: <SupportAgentIcon sx={{ fontSize: 48 }} />, path: '/panel/chat', color: '#2e7d32' }
 ]
 
 export default function AdminDashboard() {
   const navigate = useNavigate()
   const { user, logout } = useAuth()
+  const [pendingCount, setPendingCount] = useState(0)
   const cards = user?.role === 'admin' ? adminCards : managerCards
+
+  useEffect(() => {
+    let interval
+    const fetch = () => {
+      getChatSessions().then(({ data }) => {
+        setPendingCount(data.filter(s => s.status === 'waiting').length)
+      }).catch(() => {})
+    }
+    fetch()
+    interval = setInterval(fetch, 10000)
+    return () => clearInterval(interval)
+  }, [])
 
   return (
     <Container maxWidth="md" sx={{ py: 4 }}>
@@ -41,7 +59,13 @@ export default function AdminDashboard() {
               sx={{ p: 3, textAlign: 'center', cursor: 'pointer', transition: '0.2s', '&:hover': { transform: 'translateY(-4px)', boxShadow: 4 } }}
               onClick={() => navigate(card.path)}
             >
-              <Typography color={card.color}>{card.icon}</Typography>
+              {card.path === '/panel/chat' && pendingCount > 0 ? (
+                <Badge badgeContent={pendingCount} color="error">
+                  <Typography color={card.color}>{card.icon}</Typography>
+                </Badge>
+              ) : (
+                <Typography color={card.color}>{card.icon}</Typography>
+              )}
               <Typography variant="h6" sx={{ mt: 1 }}>{card.label}</Typography>
             </Paper>
           </Grid>

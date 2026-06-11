@@ -8,36 +8,50 @@
 | Frontend | React 19 + Vite 8 + Material UI 9 + React Router 7 |
 | Base de datos | MongoDB (local) |
 | Chatbot | Ollama (llama3.2:1b, deepseek-r1:7b) |
-| Autenticación | JWT + bcrypt |
+| Autenticación | Sesiones opacas (crypto) + bcrypt |
 
 ## Modelos
 
 | Colección | Propósito |
 |-----------|-----------|
-| `movies` | Películas con screenings embebidos |
+| `movies` | Películas con screenings por sala y ofertas embebidas |
 | `directors` | Directores |
 | `genres` | Géneros |
-| `stores` | Tiendas/sucursales |
+| `stores` | Tiendas con salas (5 por cine, capacidad variable) |
 | `users` | Staff: admin, manager, employee |
-| `clients` | Clientes (colección separada de users) |
-| `reservations` | Reservas de boletos |
+| `clients` | Clientes con tarjeta virtual (saldo + PIN) |
+| `reservations` | Reservas con tipo de boleto, monto, sala |
+| `chatsessions` | Sesiones de chat manager-cliente |
+| `sessions` | Sesiones de autenticación (token opaco) |
+
+### Estructura clave
+
+**Store**: `{ name, address, phone, rooms: [{ name, capacity }] }`
+
+**Movie**: `{ title, price, screenings: [{ store, room, date, time, totalSeats, bookedSeats }], offers: [{ store?, description, discountPercent, startDate, endDate, active }] }`
+
+**Client**: `{ name, email, password, active, virtualCard: { cardNumber, pin (bcrypt), balance } }`
+
+**Reservation**: `{ movie, client, createdBy?, store, room, screeningDate, showtime, seatNumber, ticketType: adult|child, amount, paymentStatus: paid|refunded, paidAt, status: active|cancelled }`
+
+**ChatSession**: `{ client, manager?, store, status: waiting|active|closed, messages: [{ from, text }] }`
 
 ## Roles
 
 | Rol | Acceso |
 |-----|--------|
-| **admin** | CRUD todo, sin restricción de tienda |
-| **manager** | CRUD películas, directores, géneros en su tienda |
-| **employee** | Inventario + reservas en su tienda |
-| **client** | Catálogo, chatbot, `/mis-reservas` |
+| **admin** | CRUD todo, sin restricción de tienda. Crea ofertas globales. |
+| **manager** | CRUD películas, directores, géneros, ofertas **solo en su tienda**. |
+| **employee** | Inventario + reservas en su tienda. |
+| **client** | Catálogo, chatbot, auto-reserva con pago, `/mis-reservas`, cancelación con reembolso. |
 
 ## Autenticación
 
-| Endpoint | Para | JWT type |
-|----------|------|----------|
+| Endpoint | Para | Sesión type |
+|----------|------|-------------|
 | `POST /api/auth/login` | Staff | `type: staff` + `role` |
 | `POST /api/client-auth/login` | Clientes | `type: client` |
-| `POST /api/client-auth/register` | Registro público | — |
+| `POST /api/client-auth/register` | Registro público | — (genera tarjeta virtual) |
 
 ## Rutas del frontend
 
@@ -59,54 +73,45 @@
 
 ## Datos de prueba (seed)
 
-| Usuario | Pass | Rol |
-|---------|------|-----|
-| admin@cineclub.com | admin123 | admin |
-| manager.centro@cineclub.com | manager123 | manager (Centro) |
-| manager.sur@cineclub.com | manager123 | manager (Sur) |
-| empleado.norte@cineclub.com | empleado123 | employee (Norte) |
-| cliente@cineclub.com | cliente123 | client |
+| Usuario | Pass | Rol | Notas |
+|---------|------|-----|-------|
+| admin@cineclub.com | admin123 | admin | Sin tienda |
+| manager.centro@cineclub.com | manager123 | manager | Tienda Centro |
+| manager.sur@cineclub.com | manager123 | manager | Tienda Sur |
+| empleado.norte@cineclub.com | empleado123 | employee | Tienda Norte |
+| cliente@cineclub.com | cliente123 | client | PIN: 123456, Tarjeta: 4000123456789012, Saldo: ~$99,590 |
 
-## Seguridad implementada
+## Seguridad
 
-- Token de sesión opaco (crypto.randomBytes 32 hex) en cookie httpOnly — **no es un JWT**, no se puede decodificar
-- Logout con endpoint que elimina la sesión de la BD y limpia la cookie
-- CORS configurado con origen específico + credentials
+- Token de sesión opaco (crypto.randomBytes 32 hex) en cookie httpOnly
+- Logout elimina sesión de la BD y limpia cookie
+- CORS con origen específico + credentials
 - Rate limiting: 10 intentos cada 15 min en login/register
 - Auth middleware: lee cookie, busca sesión en MongoDB adjunta user data
-- Store poblado (`.populate('store', 'name')`) en login staff
+- PIN de tarjeta hasheado con bcrypt
 - Frontend: `withCredentials: true`, sin token en localStorage
-- ProtectedRoute verifica `user` en localStorage (no token)
 
-## Refactor de screenings (completado)
+## Refactor History
 
-### Antes
-```js
-screenings: [{
-    store, startDate, endDate,     // rango de días + showtimes anidados
-    copies,                        // no aplica a cine
-    showtimes: [{ time, totalSeats, bookedSeats }]
-}]
-```
+| Parte | Qué se hizo |
+|-------|------------|
+| **1** — Room management | CRUD de salas (`GET/POST/PUT/DELETE /stores/:id/rooms`), límite 5 por tienda, frontend AdminStores UI con room CRUD, AdminMovies con selector de sala que auto-completa capacidad. |
+| **2** — Auth hardening | `sameSite: 'lax'`, helmet, `express.json({ limit: '1mb' })`, global error handler, graceful shutdown, `ALLOWED_ORIGINS` env var, removido jsonwebtoken/JWT_SECRET. |
+| **3** — Race conditions & financial | Booking atómico (`updateOne` + `arrayFilters` con `$lt` capacity check), refund `findOneAndUpdate(status:'active')`, `calcPrice()` centralizado, `insertMany` reemplaza loop, `crypto.randomInt` reemplaza `Math.random()`. |
+| **4** — Socket.IO Security | `io.use` middleware valida session token del modelo `Session`, chatHandler rewrite con validación `isManager()`, `clientId` extraído de `socket.user`, todos los eventos verifican auth. Frontend: `setSocketToken()`/`setManagerSocketToken()`, `GET /api/auth/socket-token` endpoint, login devuelve `socketToken`. |
+| **5** — Cleanup & edge cases | Código muerto `currentUser` eliminado de ChatWidget; `AbortController` con timeout 15s en ollamaService + fallback a blacklist-only en intentFilter; MovieDetailDialog usa `useAuth()` en vez de localStorage; socket `connect_error` refresca token automático; `GET /api/auth/me` endpoint para staff. |
+| **6** — ProtectedRoute verificado contra backend | AuthContext verifica sesión vía `GET /api/auth/me` (staff) o `GET /api/client-auth/me` (client) al montar; `loading` state evita renderizado prematuro; ProtectedRoute usa `useAuth()` en vez de localStorage. |
 
-### Después
-```js
-screenings: [{
-    store,                         // tienda
-    date: Date,                    // fecha concreta: 2026-06-10
-    time: String,                  // "16:00", "19:00", "22:00"
-    totalSeats: Number,            // 10
-    bookedSeats: Number            // 0
-}]
-```
+| **7** — Validación de request body | `middleware/validate.js` creado con `express-validator`. Cubre auth, clientAuth, movies, directors, genres, stores (rooms), reservations, users. Cada ruta POST/PUT valida tipos, formato email, MongoId, rangos numéricos, PIN 6 dígitos. Errores devueltos como `{ error, details }`. |
 
-Archivos modificados (todos completados):
-1. ✅ `backend/models/Movie.js`
-2. ✅ `backend/seed.js`
-3. ✅ `backend/routes/movies.js`
-4. ✅ `backend/routes/reservations.js`
-5. ✅ `backend/sockets/chatHandler.js`
-6. ✅ `frontend/src/pages/EmployeePanel.jsx`
-7. ✅ `frontend/src/components/catalog/MovieDetailDialog.jsx`
-8. ✅ `frontend/src/pages/AdminMovies.jsx`
-9. ✅ `frontend/src/components/catalog/MovieCard.jsx` (eliminado availability residual)
+## Pendiente a futuro
+
+- (ninguno por el momento)
+
+## Reglas de negocio
+
+1. **Salas**: Cada tienda tiene 5 salas con capacidad variable. No pueden existir dos screenings con el mismo `store + room + date + time`.
+2. **Ofertas**: Manager solo crea ofertas para su tienda. Admin crea globales (`store = null`). Al reservar se aplica el descuento de la oferta activa (store coincide o es global).
+3. **Pago**: El cliente paga con su tarjeta virtual ingresando PIN. Se descuenta del saldo. Descuento infantil 30% aplica por asiento.
+4. **Reserva múltiple**: Se pueden reservar N asientos en una sola transacción, cada uno con tipo adulto o infantil.
+5. **Chat**: El chatbot puede transferir la conversación a un manager. El manager recibe una notificación en su Dashboard y puede chatear en vivo.

@@ -1,6 +1,7 @@
 const express = require('express')
 const Director = require('../models/Director')
 const { authenticate, requireRole } = require('../middleware/auth')
+const { directorRules, directorUpdateRules } = require('../middleware/validate')
 
 const router = express.Router()
 
@@ -27,7 +28,7 @@ router.get('/:id', async (req, res) => {
     }
 })
 
-router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+router.post('/', authenticate, requireRole('admin', 'manager'), directorRules, async (req, res) => {
     try {
         const director = new Director(req.body)
         await director.save()
@@ -37,7 +38,7 @@ router.post('/', authenticate, requireRole('admin', 'manager'), async (req, res)
     }
 })
 
-router.put('/:id', authenticate, requireRole('admin', 'manager'), async (req, res) => {
+router.put('/:id', authenticate, requireRole('admin', 'manager'), directorUpdateRules, async (req, res) => {
     try {
         const director = await Director.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true })
         if (!director) return res.status(404).json({ error: 'Director no encontrado' })

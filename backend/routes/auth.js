@@ -2,6 +2,8 @@ const express = require('express')
 const rateLimit = require('express-rate-limit')
 const User = require('../models/User')
 const Session = require('../models/Session')
+const { authenticate } = require('../middleware/auth')
+const { loginRules } = require('../middleware/validate')
 
 const router = express.Router()
 
@@ -11,13 +13,9 @@ const loginLimiter = rateLimit({
     message: { error: 'Demasiados intentos. Intenta de nuevo en 15 minutos.' }
 })
 
-router.post('/login', loginLimiter, async (req, res) => {
+router.post('/login', loginLimiter, loginRules, async (req, res) => {
     try {
         const { email, password } = req.body
-
-        if (!email || !password) {
-            return res.status(400).json({ error: 'Email y contraseña son requeridos' })
-        }
 
         const user = await User.findOne({ email }).populate('store', 'name')
         if (!user) {
@@ -50,7 +48,8 @@ router.post('/login', loginLimiter, async (req, res) => {
 
         res.cookie('token', session.token, {
             httpOnly: true,
-            sameSite: 'strict',
+            sameSite: 'lax',
+            secure: process.env.NODE_ENV === 'production',
             maxAge: 24 * 60 * 60 * 1000
         })
 
@@ -61,10 +60,40 @@ router.post('/login', loginLimiter, async (req, res) => {
                 role: user.role,
                 store: user.store,
                 type: 'staff'
-            }
+            },
+            socketToken: session.token
         })
     } catch (error) {
         res.status(500).json({ error: 'Error interno del servidor' })
+    }
+})
+
+router.get('/socket-token', async (req, res) => {
+    try {
+        const token = req.cookies?.token
+        if (!token) return res.status(401).json({ error: 'No hay sesión activa' })
+
+        const session = await Session.findOne({ token }).lean()
+        if (!session || session.expiresAt < new Date()) {
+            return res.status(401).json({ error: 'Sesión inválida o expirada' })
+        }
+
+        res.json({ token })
+    } catch (error) {
+        res.status(500).json({ error: 'Error interno del servidor' })
+    }
+})
+
+router.get('/me', authenticate, async (req, res) => {
+    try {
+        if (req.user.type !== 'staff') {
+            return res.status(403).json({ error: 'Solo personal puede acceder a este perfil' })
+        }
+        const user = await User.findById(req.user.id).select('name email role store').populate('store', 'name').lean()
+        if (!user) return res.status(404).json({ error: 'Usuario no encontrado' })
+        res.json({ user: { ...user, type: 'staff' } })
+    } catch (error) {
+        res.status(500).json({ error: error.message })
     }
 })
 
@@ -73,7 +102,7 @@ router.post('/logout', async (req, res) => {
     if (token) {
         await Session.deleteOne({ token })
     }
-    res.clearCookie('token', { httpOnly: true, sameSite: 'strict' })
+    res.clearCookie('token', { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' })
     res.json({ mensaje: 'Sesión cerrada' })
 })
 

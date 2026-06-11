@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { AuthProvider } from './context/AuthContext'
+import { AuthProvider, useAuth } from './context/AuthContext'
 import ClientLayout from './components/layout/ClientLayout'
 import StaffLayout from './components/layout/StaffLayout'
 import HomePage from './pages/HomePage'
@@ -15,11 +15,21 @@ import AdminStores from './pages/AdminStores'
 import AdminUsers from './pages/AdminUsers'
 import EmployeePanel from './pages/EmployeePanel'
 import ClientReservations from './pages/ClientReservations'
+import ManagerChat from './components/chat/ManagerChat'
+import { Box, CircularProgress } from '@mui/material'
+
+function LoadingFallback() {
+  return (
+    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+      <CircularProgress />
+    </Box>
+  )
+}
 
 function ProtectedRoute({ children, roles, type, redirectTo }) {
-  const stored = localStorage.getItem('user')
-  if (!stored) return <Navigate to={redirectTo || '/login'} replace />
-  const user = JSON.parse(stored)
+  const { user, loading } = useAuth()
+  if (loading) return <LoadingFallback />
+  if (!user) return <Navigate to={redirectTo || '/login'} replace />
   if (type && user.type !== type) return <Navigate to="/" replace />
   if (roles && !roles.includes(user.role)) return <Navigate to="/" replace />
   return children
@@ -56,6 +66,7 @@ export default function App() {
             <Route path="d" element={<AdminDirectors />} />
             <Route path="g" element={<AdminGenres />} />
             <Route path="t" element={<AdminStores />} />
+            <Route path="chat" element={<ManagerChat />} />
             <Route path="u" element={
               <ProtectedRoute type="staff" roles={['admin']} redirectTo="/access">
                 <AdminUsers />

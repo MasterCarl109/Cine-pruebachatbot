@@ -4,15 +4,69 @@ const Reservation = require('../models/Reservation')
 const Movie = require('../models/Movie')
 const Client = require('../models/Client')
 const { authenticate, requireRole, requireStoreAccess } = require('../middleware/auth')
+const { staffReserveRules, clientReserveRules, checkSeatRules } = require('../middleware/validate')
+
+function sameDay(d1, d2) {
+    const a = new Date(d1)
+    const b = new Date(d2)
+    return a.getUTCFullYear() === b.getUTCFullYear() &&
+        a.getUTCMonth() === b.getUTCMonth() &&
+        a.getUTCDate() === b.getUTCDate()
+}
+
+function dayRange(date) {
+    const d = new Date(date)
+    const start = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
+    const end = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1))
+    return { start, end }
+}
+
+function calcPrice(moviePrice, offers, storeId, ticketType) {
+    let price = moviePrice
+    const activeOffer = offers.find(o =>
+        o.active &&
+        (!o.store || String(o.store) === String(storeId)) &&
+        o.startDate <= new Date() && o.endDate >= new Date()
+    )
+    if (activeOffer) {
+        price = price - (price * activeOffer.discountPercent / 100)
+    }
+    if (ticketType === 'child') {
+        price = price - (price * 0.30)
+    }
+    return Math.round(price)
+}
+
+async function atomicIncBookedSeats(movieId, storeId, room, date, time, increment, maxSeats) {
+    const { start, end } = dayRange(date)
+    const filter = {
+        's.store': storeId,
+        's.room': room,
+        's.date': { $gte: start, $lt: end },
+        's.time': time
+    }
+    if (maxSeats != null && increment > 0) {
+        filter['s.bookedSeats'] = { $lt: maxSeats }
+    }
+    const result = await Movie.updateOne(
+        {
+            _id: movieId,
+            'screenings.store': storeId,
+            'screenings.room': room,
+            'screenings.date': { $gte: start, $lt: end },
+            'screenings.time': time
+        },
+        { $inc: { 'screenings.$[s].bookedSeats': increment } },
+        { arrayFilters: [filter] }
+    )
+    return result.modifiedCount
+}
 
 router.use(authenticate)
 
-router.post('/', requireRole('admin', 'manager', 'employee'), async (req, res) => {
+router.post('/', requireRole('admin', 'manager', 'employee'), staffReserveRules, async (req, res) => {
     try {
-        const { movieId, clientEmail, screeningDate, showtime, seatNumber } = req.body
-        if (!movieId || !clientEmail || !screeningDate || !showtime || !seatNumber) {
-            return res.status(400).json({ error: 'Faltan campos requeridos' })
-        }
+        const { movieId, clientEmail, screeningDate, showtime, room, seatNumber, ticketType } = req.body
 
         const client = await Client.findOne({ email: clientEmail, active: true })
         if (!client) {
@@ -22,44 +76,25 @@ router.post('/', requireRole('admin', 'manager', 'employee'), async (req, res) =
         const movie = await Movie.findById(movieId).populate('screenings.store', 'name')
         if (!movie) return res.status(404).json({ error: 'Película no encontrada' })
 
-        const sDate = new Date(screeningDate)
-        sDate.setHours(0, 0, 0, 0)
-
         const screening = movie.screenings.find(s => {
             const sId = s.store?._id || s.store
-            const sDateOnly = new Date(s.date)
-            sDateOnly.setHours(0, 0, 0, 0)
-            const dateMatch = sDateOnly.getTime() === sDate.getTime()
+            const dateMatch = sameDay(s.date, screeningDate)
             const timeMatch = s.time === showtime
+            const roomMatch = s.room === room
             const storeMatch = String(sId) === String(req.user.store?._id || req.user.store)
             if (req.user.role === 'admin') {
                 const bodyStoreMatch = String(sId) === String(req.body.storeId || sId)
-                return bodyStoreMatch && dateMatch && timeMatch
+                return bodyStoreMatch && dateMatch && timeMatch && roomMatch
             }
-            return storeMatch && dateMatch && timeMatch
+            return storeMatch && dateMatch && timeMatch && roomMatch
         })
 
         if (!screening) {
-            return res.status(400).json({ error: 'No hay función activa para esta película en la fecha, hora y tienda seleccionadas' })
-        }
-
-        if (screening.bookedSeats >= screening.totalSeats) {
-            return res.status(400).json({ error: 'No hay asientos disponibles para esta función' })
-        }
-
-        const existing = await Reservation.findOne({
-            movie: movieId,
-            store: screening.store._id || screening.store,
-            screeningDate: sDate,
-            showtime,
-            seatNumber,
-            status: 'active'
-        })
-        if (existing) {
-            return res.status(409).json({ error: `El asiento ${seatNumber} ya está reservado para esta función` })
+            return res.status(400).json({ error: 'No hay función activa para esta película en la fecha, hora, sala y tienda seleccionadas' })
         }
 
         const storeId = screening.store._id || screening.store
+        const screeningDbDate = screening.date
 
         if (req.user.role !== 'admin') {
             const userStoreId = req.user.store?._id || req.user.store
@@ -68,22 +103,47 @@ router.post('/', requireRole('admin', 'manager', 'employee'), async (req, res) =
             }
         }
 
-        const reservation = await Reservation.create({
+        const existing = await Reservation.findOne({
             movie: movieId,
-            client: client._id,
-            createdBy: req.user.id,
             store: storeId,
-            screeningDate: sDate,
+            room,
+            screeningDate: screeningDbDate,
             showtime,
             seatNumber,
             status: 'active'
         })
+        if (existing) {
+            return res.status(409).json({ error: `El asiento ${seatNumber} ya está reservado para esta función` })
+        }
 
-        await Movie.findOneAndUpdate(
-            { _id: movieId, 'screenings.store': storeId, 'screenings.date': sDate, 'screenings.time': showtime },
-            { $inc: { 'screenings.$[s].bookedSeats': 1 } },
-            { arrayFilters: [{ 's.store': storeId, 's.date': sDate, 's.time': showtime }] }
-        )
+        const tType = ticketType || 'adult'
+        const amount = calcPrice(movie.price, movie.offers, storeId, tType)
+
+        const modified = await atomicIncBookedSeats(movieId, storeId, room, screeningDbDate, showtime, 1, screening.totalSeats)
+        if (modified === 0) {
+            return res.status(400).json({ error: 'No hay asientos disponibles para esta función' })
+        }
+
+        let reservation
+        try {
+            reservation = await Reservation.create({
+                movie: movieId,
+                client: client._id,
+                createdBy: req.user.id,
+                store: storeId,
+                room,
+                screeningDate: screeningDbDate,
+                showtime,
+                seatNumber,
+                ticketType: tType,
+                amount,
+                paymentStatus: 'paid',
+                status: 'active'
+            })
+        } catch (createErr) {
+            await atomicIncBookedSeats(movieId, storeId, room, screeningDbDate, showtime, -1)
+            throw createErr
+        }
 
         const populated = await Reservation.findById(reservation._id)
             .populate('movie', 'title')
@@ -103,34 +163,29 @@ router.put('/:id/cancel', requireRole('admin', 'manager', 'employee'), async (re
         const reservation = await Reservation.findById(req.params.id)
         if (!reservation) return res.status(404).json({ error: 'Reserva no encontrada' })
 
-        if (reservation.status !== 'active') {
-            return res.status(400).json({ error: 'La reserva ya fue cancelada' })
-        }
-
         if (req.user.role !== 'admin') {
             const userStoreId = req.user.store?._id || req.user.store
             const resStoreId = reservation.store?._id || reservation.store
             if (String(resStoreId) !== String(userStoreId)) {
-                return res.status(403).json({ error: 'No tienes acceso a esta reserva' })
+                return res.status(403).json({ error: 'No tienes acceso a esta reserva (fuera de tu tienda)' })
             }
         }
 
-        reservation.status = 'cancelled'
-        await reservation.save()
-
-        const resDate = new Date(reservation.screeningDate)
-        resDate.setHours(0, 0, 0, 0)
-        const resStoreId = reservation.store?._id || reservation.store
-        await Movie.findOneAndUpdate(
-            { _id: reservation.movie, 'screenings.store': resStoreId, 'screenings.date': resDate, 'screenings.time': reservation.showtime },
-            { $inc: { 'screenings.$[s].bookedSeats': -1 } },
-            { arrayFilters: [{ 's.store': resStoreId, 's.date': resDate, 's.time': reservation.showtime }] }
+        const cancelled = await Reservation.findOneAndUpdate(
+            { _id: req.params.id, status: 'active' },
+            { status: 'cancelled' },
+            { new: true }
         )
+        if (!cancelled) {
+            return res.status(400).json({ error: 'La reserva ya fue cancelada o no existe' })
+        }
 
-        const populated = await Reservation.findById(reservation._id)
+        const resStoreId = reservation.store?._id || reservation.store
+        await atomicIncBookedSeats(reservation.movie, resStoreId, reservation.room, reservation.screeningDate, reservation.showtime, -1)
+
+        const populated = await Reservation.findById(cancelled._id)
             .populate('movie', 'title')
             .populate('client', 'name email')
-            .populate('createdBy', 'name')
             .populate('store', 'name')
 
         res.json(populated)
@@ -177,7 +232,7 @@ router.get('/mine', async (req, res) => {
             return res.status(403).json({ error: 'Solo clientes pueden ver sus reservas' })
         }
 
-        const reservations = await Reservation.find({ client: req.user.id, status: 'active' })
+        const reservations = await Reservation.find({ client: req.user.id })
             .populate('movie', 'title poster')
             .populate('store', 'name')
             .populate('createdBy', 'name')
@@ -190,15 +245,13 @@ router.get('/mine', async (req, res) => {
     }
 })
 
-router.get('/check-seat', async (req, res) => {
+router.get('/check-seat', checkSeatRules, async (req, res) => {
     try {
-        const { movieId, screeningDate, showtime, seatNumber } = req.query
-        if (!movieId || !screeningDate || !showtime || !seatNumber) {
-            return res.status(400).json({ error: 'Faltan parámetros' })
-        }
+        const { movieId, screeningDate, showtime, room, seatNumber } = req.query
 
         const existing = await Reservation.findOne({
             movie: movieId,
+            room,
             screeningDate: new Date(screeningDate),
             showtime,
             seatNumber: Number(seatNumber),
@@ -208,6 +261,160 @@ router.get('/check-seat', async (req, res) => {
         res.json({ available: !existing })
     } catch (error) {
         console.error('Error al verificar asiento:', error)
+        res.status(500).json({ error: error.message })
+    }
+})
+
+// ============================================================
+// CLIENT SELF-RESERVE with payment (multi-seat + children discount)
+// ============================================================
+
+router.post('/client-reserve', clientReserveRules, async (req, res) => {
+    try {
+        if (req.user.type !== 'client') {
+            return res.status(403).json({ error: 'Solo clientes pueden usar esta función' })
+        }
+
+        const { movieId, storeId, screeningDate, showtime, room, seats, pin } = req.body
+
+        const client = await Client.findById(req.user.id)
+        if (!client) return res.status(404).json({ error: 'Cliente no encontrado' })
+
+        const pinMatch = await client.comparePin(pin)
+        if (!pinMatch) return res.status(401).json({ error: 'PIN incorrecto' })
+
+        const movie = await Movie.findById(movieId)
+        if (!movie) return res.status(404).json({ error: 'Película no encontrada' })
+
+        const screening = movie.screenings.find(s => {
+            const sId = s.store?._id || s.store
+            return String(sId) === String(storeId) &&
+                s.room === room &&
+                sameDay(s.date, screeningDate) &&
+                s.time === showtime
+        })
+
+        if (!screening) {
+            return res.status(400).json({ error: 'No hay función activa para esta película en los datos seleccionados' })
+        }
+
+        const screeningDbDate = screening.date
+
+        const seatNumbers = seats.map(s => s.seatNumber)
+        const existingReservations = await Reservation.find({
+            movie: movieId,
+            store: storeId,
+            room,
+            screeningDate: screeningDbDate,
+            showtime,
+            seatNumber: { $in: seatNumbers },
+            status: 'active'
+        })
+
+        if (existingReservations.length > 0) {
+            const taken = existingReservations.map(r => r.seatNumber)
+            return res.status(409).json({ error: `Los asientos ${taken.join(', ')} ya están reservados` })
+        }
+
+        let totalAmount = 0
+        const seatDetails = seats.map(s => {
+            const amount = calcPrice(movie.price, movie.offers, storeId, s.ticketType)
+            totalAmount += amount
+            return { seatNumber: s.seatNumber, ticketType: s.ticketType, amount }
+        })
+
+        if (client.virtualCard.balance < totalAmount) {
+            return res.status(400).json({ error: `Saldo insuficiente. Necesitas $${totalAmount} pero tienes $${client.virtualCard.balance}` })
+        }
+
+        const modified = await atomicIncBookedSeats(movieId, storeId, room, screeningDbDate, showtime, seats.length, screening.totalSeats)
+        if (modified === 0) {
+            return res.status(400).json({ error: `No hay suficientes asientos disponibles para esta función` })
+        }
+
+        let createdReservations
+        try {
+            createdReservations = await Reservation.insertMany(
+                seatDetails.map(seat => ({
+                    movie: movieId,
+                    client: client._id,
+                    createdBy: null,
+                    store: storeId,
+                    room,
+                    screeningDate: screeningDbDate,
+                    showtime,
+                    seatNumber: seat.seatNumber,
+                    ticketType: seat.ticketType,
+                    amount: seat.amount,
+                    paymentStatus: 'paid',
+                    status: 'active'
+                }))
+            )
+        } catch (createErr) {
+            await atomicIncBookedSeats(movieId, storeId, room, screeningDbDate, showtime, -seats.length)
+            throw createErr
+        }
+
+        await Client.findByIdAndUpdate(client._id, {
+            $inc: { 'virtualCard.balance': -totalAmount }
+        })
+
+        const populated = await Reservation.find({ _id: { $in: createdReservations.map(r => r._id) } })
+            .populate('movie', 'title')
+            .populate('store', 'name')
+
+        const updatedClient = await Client.findById(client._id)
+
+        res.status(201).json({
+            reservations: populated,
+            totalAmount,
+            newBalance: updatedClient.virtualCard.balance
+        })
+    } catch (error) {
+        console.error('Error en reserva de cliente:', error)
+        res.status(500).json({ error: error.message })
+    }
+})
+
+// ============================================================
+// CLIENT CANCEL with refund
+// ============================================================
+router.put('/:id/client-cancel', async (req, res) => {
+    try {
+        if (req.user.type !== 'client') {
+            return res.status(403).json({ error: 'Solo clientes pueden cancelar sus propias reservas' })
+        }
+
+        const reservation = await Reservation.findById(req.params.id)
+        if (!reservation) return res.status(404).json({ error: 'Reserva no encontrada' })
+
+        if (String(reservation.client) !== String(req.user.id)) {
+            return res.status(403).json({ error: 'Esta reserva no te pertenece' })
+        }
+
+        const cancelled = await Reservation.findOneAndUpdate(
+            { _id: req.params.id, status: 'active' },
+            { status: 'cancelled', paymentStatus: 'refunded' },
+            { new: true }
+        )
+        if (!cancelled) {
+            return res.status(400).json({ error: 'La reserva ya fue cancelada' })
+        }
+
+        await Client.findByIdAndUpdate(req.user.id, {
+            $inc: { 'virtualCard.balance': cancelled.amount }
+        })
+
+        const resStoreId = cancelled.store?._id || cancelled.store
+        await atomicIncBookedSeats(cancelled.movie, resStoreId, cancelled.room, cancelled.screeningDate, cancelled.showtime, -1)
+
+        const populated = await Reservation.findById(cancelled._id)
+            .populate('movie', 'title')
+            .populate('store', 'name')
+
+        res.json({ reservation: populated, refunded: cancelled.amount })
+    } catch (error) {
+        console.error('Error al cancelar reserva:', error)
         res.status(500).json({ error: error.message })
     }
 })

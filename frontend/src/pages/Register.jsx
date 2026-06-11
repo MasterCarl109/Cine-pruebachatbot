@@ -7,17 +7,23 @@ export default function RegisterPage() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [pin, setPin] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
+  const [cardNumber, setCardNumber] = useState('')
   const navigate = useNavigate()
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
+    if (!/^\d{6}$/.test(pin)) {
+      setError('El PIN debe tener exactamente 6 dígitos')
+      return
+    }
     try {
-      await clientRegister(email, password, name)
+      const { data } = await clientRegister(email, password, name, pin)
+      setCardNumber(data.cardNumber)
       setSuccess(true)
-      setTimeout(() => navigate('/login'), 2000)
     } catch (err) {
       setError(err.response?.data?.error || 'Error al registrarse')
     }
@@ -30,13 +36,30 @@ export default function RegisterPage() {
           Crear Cuenta
         </Typography>
         {success ? (
-          <Alert severity="success" sx={{ mb: 2 }}>Cuenta creada. Redirigiendo al inicio de sesión...</Alert>
+          <Box>
+            <Alert severity="success" sx={{ mb: 2 }}>Cuenta creada exitosamente</Alert>
+            <Paper sx={{ p: 3, bgcolor: '#16213e', border: '1px solid rgba(255,255,255,0.08)', mb: 2 }}>
+              <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                Tu número de tarjeta virtual
+              </Typography>
+              <Typography variant="h6" sx={{ fontFamily: 'monospace', letterSpacing: 2, color: 'primary.main' }}>
+                {cardNumber}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                Guárdalo en un lugar seguro. Lo necesitarás para identificar tu tarjeta.
+              </Typography>
+            </Paper>
+            <Button fullWidth variant="contained" color="primary" onClick={() => navigate('/login')}>
+              Ir a Iniciar Sesión
+            </Button>
+          </Box>
         ) : (
           <Box component="form" onSubmit={handleSubmit}>
             {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
             <TextField fullWidth label="Nombre" value={name} onChange={(e) => setName(e.target.value)} margin="normal" required slotProps={{ inputLabel: { sx: { color: 'text.secondary' } }, input: { sx: { color: 'white', '& fieldset': { borderColor: 'rgba(255,255,255,0.2)' }, '&:hover fieldset': { borderColor: 'rgba(255,255,255,0.4)' } } } }} />
             <TextField fullWidth label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} margin="normal" required slotProps={{ inputLabel: { sx: { color: 'text.secondary' } }, input: { sx: { color: 'white', '& fieldset': { borderColor: 'rgba(255,255,255,0.2)' }, '&:hover fieldset': { borderColor: 'rgba(255,255,255,0.4)' } } } }} />
             <TextField fullWidth label="Contraseña" type="password" value={password} onChange={(e) => setPassword(e.target.value)} margin="normal" required slotProps={{ inputLabel: { sx: { color: 'text.secondary' } }, input: { sx: { color: 'white', '& fieldset': { borderColor: 'rgba(255,255,255,0.2)' }, '&:hover fieldset': { borderColor: 'rgba(255,255,255,0.4)' } } } }} />
+            <TextField fullWidth label="PIN de tarjeta (6 dígitos)" type="password" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))} margin="normal" required inputProps={{ maxLength: 6, inputMode: 'numeric' }} slotProps={{ inputLabel: { sx: { color: 'text.secondary' } }, input: { sx: { color: 'white', '& fieldset': { borderColor: 'rgba(255,255,255,0.2)' }, '&:hover fieldset': { borderColor: 'rgba(255,255,255,0.4)' } } } }} />
             <Button fullWidth type="submit" variant="contained" color="primary" size="large" sx={{ mt: 2 }}>
               Registrarse
             </Button>
