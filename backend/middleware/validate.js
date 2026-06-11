@@ -125,12 +125,14 @@ const roomUpdateRules = [
 /* ---- Reservations ---- */
 const staffReserveRules = [
     body('movieId').custom(isMongoId).withMessage('Película inválida'),
-    body('clientEmail').isEmail().normalizeEmail().withMessage('Email del cliente inválido'),
+    body('clientEmail').optional().isEmail().normalizeEmail().withMessage('Email del cliente inválido'),
+    body('clientName').optional().trim().notEmpty().withMessage('Nombre del cliente requerido'),
     body('screeningDate').isISO8601().withMessage('Fecha inválida'),
     body('showtime').notEmpty().withMessage('Horario requerido'),
     body('room').notEmpty().withMessage('Sala requerida'),
-    body('seatNumber').isInt({ min: 1 }).withMessage('Número de asiento inválido'),
-    body('ticketType').optional().isIn(['adult', 'child']).withMessage('Tipo de boleto debe ser adult o child'),
+    body('seats').isArray({ min: 1 }).withMessage('Debe reservar al menos un asiento'),
+    body('seats.*.seatNumber').isInt({ min: 1 }).withMessage('Número de asiento inválido'),
+    body('seats.*.ticketType').isIn(['adult', 'child']).withMessage('Tipo de boleto inválido'),
     handleValidation
 ]
 

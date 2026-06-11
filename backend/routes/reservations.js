@@ -3,7 +3,7 @@ const router = express.Router()
 const Reservation = require('../models/Reservation')
 const Movie = require('../models/Movie')
 const Client = require('../models/Client')
-const { authenticate, requireRole, requireStoreAccess } = require('../middleware/auth')
+const { authenticate, requireRole } = require('../middleware/auth')
 const { staffReserveRules, clientReserveRules, checkSeatRules } = require('../middleware/validate')
 
 function sameDay(d1, d2) {
@@ -21,7 +21,7 @@ function dayRange(date) {
     return { start, end }
 }
 
-function calcPrice(moviePrice, offers, storeId, ticketType) {
+function calcPrice(moviePrice, offers, storeId, ticketType, childDiscount = 0.30) {
     let price = moviePrice
     const activeOffer = offers.find(o =>
         o.active &&
@@ -32,7 +32,7 @@ function calcPrice(moviePrice, offers, storeId, ticketType) {
         price = price - (price * activeOffer.discountPercent / 100)
     }
     if (ticketType === 'child') {
-        price = price - (price * 0.30)
+        price = price - (price * childDiscount)
     }
     return Math.round(price)
 }
@@ -66,11 +66,15 @@ router.use(authenticate)
 
 router.post('/', requireRole('admin', 'manager', 'employee'), staffReserveRules, async (req, res) => {
     try {
-        const { movieId, clientEmail, screeningDate, showtime, room, seatNumber, ticketType } = req.body
+        const { movieId, clientEmail, clientName, screeningDate, showtime, room, seats } = req.body
 
-        const client = await Client.findOne({ email: clientEmail, active: true })
-        if (!client) {
-            return res.status(404).json({ error: 'Cliente no encontrado. El cliente debe estar registrado.' })
+        // Validar cliente
+        let client = null
+        if (clientEmail) {
+            client = await Client.findOne({ email: clientEmail, active: true }).lean()
+            if (!client) {
+                return res.status(404).json({ error: 'Cliente no encontrado.' })
+            }
         }
 
         const movie = await Movie.findById(movieId).populate('screenings.store', 'name')
@@ -103,55 +107,85 @@ router.post('/', requireRole('admin', 'manager', 'employee'), staffReserveRules,
             }
         }
 
-        const existing = await Reservation.findOne({
+        // Validar asientos duplicados en la misma solicitud
+        const seatNumbers = seats.map(s => s.seatNumber)
+        if (new Set(seatNumbers).size !== seatNumbers.length) {
+            return res.status(400).json({ error: 'No puedes reservar el mismo asiento más de una vez' })
+        }
+
+        // Verificar asientos ocupados
+        const existingReservations = await Reservation.find({
             movie: movieId,
             store: storeId,
             room,
             screeningDate: screeningDbDate,
             showtime,
-            seatNumber,
+            seatNumber: { $in: seatNumbers },
             status: 'active'
         })
-        if (existing) {
-            return res.status(409).json({ error: `El asiento ${seatNumber} ya está reservado para esta función` })
+        if (existingReservations.length > 0) {
+            const taken = existingReservations.map(r => r.seatNumber)
+            return res.status(409).json({ error: `Los asientos ${taken.join(', ')} ya están reservados` })
         }
 
-        const tType = ticketType || 'adult'
-        const amount = calcPrice(movie.price, movie.offers, storeId, tType)
+        // Validar capacidad
+        const totalRequested = seats.length
+        const availableSeats = (screening.totalSeats || 10) - (screening.bookedSeats || 0)
+        if (totalRequested > availableSeats) {
+            return res.status(400).json({ error: `Solo hay ${availableSeats} asientos disponibles para esta función` })
+        }
 
-        const modified = await atomicIncBookedSeats(movieId, storeId, room, screeningDbDate, showtime, 1, screening.totalSeats)
+        // Calcular montos por asiento
+        const seatDetails = seats.map(s => ({
+            seatNumber: s.seatNumber,
+            ticketType: s.ticketType,
+            amount: calcPrice(movie.price, movie.offers, storeId, s.ticketType, 0.20)
+        }))
+        const totalAmount = seatDetails.reduce((sum, s) => sum + s.amount, 0)
+
+        // Incrementar asientos ocupados
+        const modified = await atomicIncBookedSeats(movieId, storeId, room, screeningDbDate, showtime, totalRequested, screening.totalSeats)
         if (modified === 0) {
-            return res.status(400).json({ error: 'No hay asientos disponibles para esta función' })
+            return res.status(400).json({ error: 'No hay suficientes asientos disponibles para esta función' })
         }
 
-        let reservation
+        // Crear reservas
+        let createdReservations
         try {
-            reservation = await Reservation.create({
-                movie: movieId,
-                client: client._id,
-                createdBy: req.user.id,
-                store: storeId,
-                room,
-                screeningDate: screeningDbDate,
-                showtime,
-                seatNumber,
-                ticketType: tType,
-                amount,
-                paymentStatus: 'paid',
-                status: 'active'
-            })
+            createdReservations = await Reservation.insertMany(
+                seatDetails.map(seat => ({
+                    movie: movieId,
+                    client: client?._id || null,
+                    clientName: client ? null : (clientName || 'Sin nombre'),
+                    createdBy: req.user.id,
+                    store: storeId,
+                    room,
+                    screeningDate: screeningDbDate,
+                    showtime,
+                    seatNumber: seat.seatNumber,
+                    ticketType: seat.ticketType,
+                    amount: seat.amount,
+                    paymentStatus: 'paid',
+                    status: 'active'
+                }))
+            )
         } catch (createErr) {
-            await atomicIncBookedSeats(movieId, storeId, room, screeningDbDate, showtime, -1)
+            await atomicIncBookedSeats(movieId, storeId, room, screeningDbDate, showtime, -totalRequested)
             throw createErr
         }
 
-        const populated = await Reservation.findById(reservation._id)
+        const populated = await Reservation.find({ _id: { $in: createdReservations.map(r => r._id) } })
             .populate('movie', 'title')
             .populate('client', 'name email')
             .populate('createdBy', 'name')
             .populate('store', 'name')
 
-        res.status(201).json(populated)
+        const displayName = client ? client.name : clientName
+        res.status(201).json({
+            reservations: populated,
+            clientName: displayName || 'Sin nombre',
+            totalAmount
+        })
     } catch (error) {
         console.error('Error al crear reserva:', error)
         res.status(500).json({ error: error.message })
