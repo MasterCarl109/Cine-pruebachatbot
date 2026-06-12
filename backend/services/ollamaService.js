@@ -1,8 +1,20 @@
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434'
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:3b'
+const FALLBACK_MODEL = process.env.FALLBACK_MODEL || 'llama3.2:1b'
 const TIMEOUT_MS = 15000
-const CLASSIFY_MODEL = process.env.CLASSIFY_MODEL || 'llama3.2:1b'
-const CLASSIFY_TIMEOUT_MS = 5000
+const FALLBACK_TIMEOUT_MS = 8000
+
+const GENERIC_PHRASES = [
+    'no tengo información', 'no tengo datos', 'no tengo suficiente',
+    'no puedo', 'no puedo proporcionar', 'lo siento',
+    'no se encuentra', 'no se encontró', 'no se ha encontrado',
+    'no está disponible', 'no está en mi base', 'no está en mi conocimiento',
+    'no sé', 'no lo sé', 'no lo se',
+    'no dispongo', 'no cuento con',
+    'no hay información', 'no hay datos',
+    'no encuentro', 'no encontré', 'no encontre',
+    'no aparecen', 'no aparece'
+]
 
 async function fetchWithTimeout(url, options, timeoutMs = TIMEOUT_MS) {
     const controller = new AbortController()
@@ -15,30 +27,114 @@ async function fetchWithTimeout(url, options, timeoutMs = TIMEOUT_MS) {
     }
 }
 
-async function generateResponse(systemPrompt, context, userMessage) {
-    const contextText = buildContextText(context)
-    const prompt = `${systemPrompt}\n\nInformación del catálogo:\n${contextText}\n\nPregunta del usuario: ${userMessage}\n\nRespuesta (texto natural, sin JSON):`
-
+async function callOllama(prompt, model, timeoutMs) {
     const response = await fetchWithTimeout(`${OLLAMA_URL}/api/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            model: OLLAMA_MODEL,
-            prompt,
-            stream: false,
-            options: {
-                temperature: 0.3
-            }
-        })
-    })
+        body: JSON.stringify({ model, prompt, stream: false, options: { temperature: 0.3 } })
+    }, timeoutMs)
 
     if (!response.ok) {
         const body = await response.text().catch(() => '')
-        throw new Error(`Ollama generate error: ${response.status} ${response.statusText} | ${body}`)
+        throw new Error(`Ollama error (${model}): ${response.status} ${response.statusText} | ${body}`)
     }
 
     const data = await response.json()
     return cleanResponse(data.response)
+}
+
+function hasGenericResponse(text, context) {
+    const lower = text.toLowerCase()
+    if (context?.peliculas_encontradas?.length) {
+        if (text.length < 60) return true
+        const mentionsMovie = context.peliculas_encontradas.some(m =>
+            lower.includes(m.titulo.toLowerCase())
+        )
+        if (mentionsMovie) return false
+    }
+    return GENERIC_PHRASES.some(p => lower.includes(p))
+}
+
+function buildStructuredFallback(context, userMessage) {
+    const parts = []
+    const msg = (userMessage || context?.consulta || '').toLowerCase()
+    const isOfferQuery = /oferta|promocion|descuento/.test(msg)
+    const isReserveQuery = /reservar|reserva|comprar|boleto|pagar|tarjeta/.test(msg)
+
+    if (isOfferQuery && context.peliculas_encontradas?.length) {
+        const offers = []
+        context.peliculas_encontradas.forEach(m => {
+            if (m.ofertas?.length) {
+                offers.push(`- "${m.titulo}": ${m.ofertas.map(o =>
+                    `${o.descripcion} (${o.descuento} de descuento en ${o.tienda}, vigente del ${o.vigencia})`
+                ).join(' | ')}`)
+            }
+        })
+        if (offers.length) {
+            parts.push('Ofertas disponibles:')
+            parts.push(...offers)
+        } else {
+            parts.push('No hay ofertas activas en este momento.')
+        }
+        return parts.join('\n')
+    }
+
+    if (isReserveQuery) {
+        parts.push('Para reservar: inicia sesion en tu cuenta, ve al catalogo, elige la funcion y los asientos, y paga con tu tarjeta virtual + PIN de 6 digitos.')
+        return parts.join('\n')
+    }
+
+    if (context.peliculas_encontradas?.length) {
+        parts.push('Películas disponibles:')
+        context.peliculas_encontradas.forEach(m => {
+            let line = `- ${m.titulo} — $${m.precio}`
+            if (m.generos?.length) line += ` (${m.generos.join(', ')})`
+            parts.push(line)
+        })
+        parts.push('')
+        parts.push('¿De cuál película quieres saber más y de qué sucursal?')
+    }
+
+    if (context.directores_encontrados?.length) {
+        if (parts.length) parts.push('')
+        parts.push('Directores:')
+        context.directores_encontrados.forEach(d => {
+            parts.push(`- ${d.nombre} (${d.nacionalidad || 'nacionalidad no disponible'})`)
+        })
+    }
+
+    if (parts.length === 0) {
+        parts.push('No se encontro informacion en el catalogo.')
+    }
+
+    return parts.join('\n')
+}
+
+async function generateResponse(systemPrompt, context, userMessage) {
+    const contextText = buildContextText(context)
+    const prompt = `${systemPrompt}\n\nInformación del catálogo:\n${contextText}\n\nPregunta del usuario: ${userMessage}\n\nRespuesta (texto natural, sin JSON):`
+
+    let response
+    try {
+        response = await callOllama(prompt, OLLAMA_MODEL, TIMEOUT_MS)
+    } catch (primaryError) {
+        console.error(`Error con modelo primario ${OLLAMA_MODEL}:`, primaryError.message)
+        console.log(`Reintentando con modelo fallback ${FALLBACK_MODEL}...`)
+        try {
+            response = await callOllama(prompt, FALLBACK_MODEL, FALLBACK_TIMEOUT_MS)
+        } catch (fallbackError) {
+            if (context.peliculas_encontradas?.length) {
+                return buildStructuredFallback(context, userMessage)
+            }
+            throw new Error(`Ambos modelos fallaron. Primario: ${primaryError.message}. Fallback: ${fallbackError.message}`)
+        }
+    }
+
+    if (hasGenericResponse(response, context) && context.peliculas_encontradas?.length) {
+        response = buildStructuredFallback(context, userMessage)
+    }
+
+    return response
 }
 
 function buildContextText(context) {
@@ -87,37 +183,4 @@ function cleanResponse(text) {
     return clean || text
 }
 
-async function classifyIntent(userMessage) {
-    const prompt = `[INST] <<SYS>>
-You are a classifier for a cinema chatbot. Answer ONLY with "catalogo" or "otro".
-- catalogo: ANY question about movies, cinema, film recommendations, actors, directors, genres, showtimes, prices, stores, promotions, opinions about films, film comparisons, or anything related to movies/cinema.
-- otro: sports, politics, weather, music, cooking, tech, health, math, calculations, science, news, games, or any topic NOT related to cinema or movies.
-<</SYS>>
-
-Mensaje: "${userMessage}"
-Respuesta: [/INST]`
-
-    const response = await fetchWithTimeout(`${OLLAMA_URL}/api/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            model: CLASSIFY_MODEL,
-            prompt,
-            stream: false,
-            options: { temperature: 0.1 }
-        })
-    }, CLASSIFY_TIMEOUT_MS)
-
-    if (!response.ok) {
-        const body = await response.text().catch(() => '')
-        throw new Error(`Ollama classify error: ${response.status} ${response.statusText} | ${body}`)
-    }
-
-    const data = await response.json()
-    const result = data.response.trim().toLowerCase().replace(/[^a-záéíóúñ]/g, '')
-
-    if (result.includes('catalogo')) return 'catalogo'
-    return 'otro'
-}
-
-module.exports = { generateResponse, classifyIntent }
+module.exports = { generateResponse }

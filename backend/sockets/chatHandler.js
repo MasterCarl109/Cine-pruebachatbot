@@ -1,5 +1,6 @@
 const { isCatalogRelated } = require('../services/intentFilter')
 const { generateResponse } = require('../services/ollamaService')
+const { extractKeywords, buildAccentRegex, escapeRegex, normalizeText, closestMatch, isConfirming, isRejecting } = require('../services/searchHelper')
 const Movie = require('../models/Movie')
 const Director = require('../models/Director')
 const Genre = require('../models/Genre')
@@ -9,7 +10,7 @@ const Store = require('../models/Store')
 
 const OFF_TOPIC_REPLY = 'Solo hablo de cine y de nuestro catálogo de CineClub. ¿Buscas alguna película, género o director en particular?'
 
-const SYSTEM_PROMPT = 'Eres el asistente virtual de CineClub, un cine con múltiples sucursales. Habla como un cinéfilo conocedor: natural, entusiasta del cine, con opiniones basadas en los datos del catálogo. Responde siempre en español.\n\nREGLAS ESTRICTAS:\n- Solo puedes usar la información del catálogo que se te proporciona. NUNCA inventes títulos, directores, horarios, fechas, precios o disponibilidad.\n- Si no tienes suficiente información, dilo directamente: "No tengo ese dato en el catálogo".\n- NO uses JSON ni formatos técnicos. Texto natural solamente.\n- NUNCA hagas chistes, cuentas matemáticas o temas ajenos al cine.\n\nInstrucciones:\n- Siempre incluye el precio (ej: "$25 por boleto").\n- Si hay funciones pero no hoy, menciona la próxima fecha disponible.\n- Puedes dar opiniones sobre películas basadas en los datos (popularidad, género, sinopsis): ej: "Inception es un thriller de ciencia ficción muy popular, tiene varias funciones disponibles".\n- Cuando el usuario pregunte por ofertas, promociones o géneros específicos, responde con una lista concisa de nombres y precios. Da más detalles solo si el usuario los pide.\n- Si corresponde, explica cómo reservar: iniciar sesión, ir al catálogo, elegir función y asientos, pagar con tarjeta virtual + PIN de 6 dígitos.'
+const SYSTEM_PROMPT = 'Eres el asistente virtual de CineClub, un cine con múltiples sucursales. Responde siempre en español, de forma natural y concisa.\n\nREGLAS ESTRICTAS:\n- Solo puedes usar la información del catálogo que se te proporciona. NUNCA inventes títulos, directores, horarios, fechas, precios o disponibilidad.\n- NO uses JSON ni formatos técnicos. Texto natural solamente.\n- NUNCA hagas chistes, cuentas matemáticas o temas ajenos al cine.\n\nInstrucciones según la consulta:\n- Si pregunta por el catálogo o películas disponibles: responde SOLO con los nombres y precios. NO incluyas horarios, funciones, sinopsis ni ofertas a menos que las pida específicamente.\n- Si pregunta por una película en específico (ej: "cuéntame de X", "dame información de X", "hablame de X", "detalles de X", "informacion sobre X"): da todos los detalles: sinopsis, géneros, funciones disponibles con horarios y asientos libres.\n- Si pregunta por ofertas o promociones: busca el campo "Ofertas:" en los datos del catálogo y enlistalas con sus descuentos y vigencia. Si no hay ofertas activas, indícalo claramente. NO incluyas películas que no tengan ofertas.\n- Si pregunta cómo reservar: explica el paso a paso (iniciar sesión, ir al catálogo, elegir función y asientos, pagar con tarjeta virtual + PIN).'
 
 const TRANSFER_KEYWORDS = ['gerente', 'manager', 'humano', 'asesor', 'persona real', 'hablar con', 'atencion', 'ayuda humana', 'representante', 'supervisor', 'transferir', 'transferencia', 'me comuniques', 'me conectes', 'me pongas', 'operador']
 
@@ -18,6 +19,31 @@ const pendingStoreSelection = new Map()
 
 // Rastrea sockets esperando selección de sucursal para consultar catálogo
 const pendingCatalogStore = new Map()
+
+// Rastrea sockets esperando confirmación de título fuzzy
+const pendingFuzzyConfirm = new Map()
+
+// Memoria de conversación para seguimiento ("cuéntame más de esa")
+const conversationMemory = new Map()
+const MEMORY_TTL = 5 * 60 * 1000 // 5 minutos
+
+const FOLLOW_UP_PATTERNS = [
+    'cuentame mas', 'dime mas', 'hablame mas',
+    'cuentame más', 'dime más', 'hablame más',
+    'y esa', 'y ese', 'y esta', 'y este',
+    'mas sobre', 'mas de', 'más sobre', 'más de',
+    'detalles', 'mas detalles', 'más detalles',
+    'informacion de esa', 'información de esa',
+    'quiero saber mas', 'quiero saber más',
+    'ampliar', 'profundiza', 'sigue contando',
+    'sigueme contando', 'sigueme hablando',
+    'hablame de esa', 'hablame de ese'
+]
+
+function isFollowUp(message) {
+    const normalized = normalizeText(message)
+    return FOLLOW_UP_PATTERNS.some(pattern => normalized.includes(pattern))
+}
 
 const STOP_WORDS = new Set([
     'hola', 'buenos', 'buenas', 'dias', 'tardes', 'noches',
@@ -47,34 +73,18 @@ const STOP_WORDS = new Set([
     'aquel', 'aquella', 'aquello', 'aquellos', 'aquellas',
     'oferta', 'ofertas', 'promocion', 'promociones',
     'precio', 'precios', 'descuento', 'descuentos',
-    'costo', 'costos', 'tarifa', 'tarifas'
+    'costo', 'costos', 'tarifa', 'tarifas',
+    'cartelera', 'estreno', 'estrenos', 'estrenar',
+    'boleto', 'boletos', 'entrada', 'entradas',
+    'funcion', 'funciones', 'horario', 'horarios'
 ])
 
-function escapeRegex(string) {
-    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-function buildAccentRegex(word) {
-    const accentMap = {
-        'a': '[aáàäâ]', 'e': '[eéèëê]', 'i': '[iíìïî]',
-        'o': '[oóòöô]', 'u': '[uúùüû]', 'n': '[nñ]'
-    }
-    const escaped = escapeRegex(word)
-    const pattern = escaped.split('').map(c => accentMap[c.toLowerCase()] || c).join('')
-    return new RegExp(pattern, 'i')
-}
-
-function extractKeywords(text) {
-    const normalized = text.toLowerCase()
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    return normalized
-        .replace(/[^a-z0-9\s]/g, ' ')
-        .split(/\s+/)
-        .filter(word => word.length > 2 && !STOP_WORDS.has(word))
+function extractKeywordsLocal(text) {
+    return extractKeywords(text, STOP_WORDS)
 }
 
 function hasTransferIntent(text) {
-    const lower = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    const lower = normalizeText(text)
     return TRANSFER_KEYWORDS.some(kw => lower.includes(kw))
 }
 
@@ -88,7 +98,7 @@ function populates() {
 }
 
 async function searchCatalog(message, store = null) {
-    const keywords = extractKeywords(message)
+    const keywords = extractKeywordsLocal(message)
 
     if (keywords.length === 0) {
         const today = new Date()
@@ -178,12 +188,28 @@ function getClientId(socket, data) {
     return null
 }
 
+let storesCache = null
+let storesCacheTime = 0
+const STORES_CACHE_TTL = 30000
+
+async function getStores() {
+    if (storesCache && Date.now() - storesCacheTime < STORES_CACHE_TTL) return storesCache
+    storesCache = await Store.find({}).lean()
+    storesCacheTime = Date.now()
+    return storesCache
+}
+
 async function detectStore(message) {
-    const normalized = message.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    const stores = await Store.find({}).lean()
+    const normalized = normalizeText(message)
+    const stores = await getStores()
     for (const store of stores) {
-        const name = store.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-        if (normalized.includes(name)) return store
+        const name = normalizeText(store.name)
+        const escaped = escapeRegex(name)
+        const pattern = new RegExp(
+            `(sucursal|tienda|cine)\\s+(de\\s+)?(la\\s+)?(del\\s+)?${escaped}` +
+            `|\\b${escaped}\\b`, 'i'
+        )
+        if (pattern.test(normalized)) return store
     }
     return null
 }
@@ -296,9 +322,10 @@ module.exports = (io) => {
 
                         socket.emit('bot_typing', { typing: false })
                     } else {
-                        const stores = await Store.find({}).lean()
+                        const stores = await getStores()
                         const names = stores.map(s => s.name).join(', ')
                         socket.emit('bot_response', { message: `No reconozco esa sucursal. Por favor elige una de las siguientes: ${names}` })
+                        socket.emit('bot_suggestions', { suggestions: stores.map(s => s.name) })
                         socket.emit('bot_typing', { typing: false })
                     }
                     return
@@ -313,6 +340,7 @@ module.exports = (io) => {
                     if (store || isSkip) {
                         pendingCatalogStore.delete(socket.id)
                         const { movies, directors } = await searchCatalog(originalMessage, store)
+                        conversationMemory.set(socket.id, { lastMovies: movies, lastStore: store, lastMessage: originalMessage, timestamp: Date.now() })
                         const context = buildCatalogContext(originalMessage, movies, directors, store)
                         if (movies.length === 0) {
                             socket.emit('bot_response', { message: 'No encontré películas en esa sucursal. Intenta con otra búsqueda.' })
@@ -321,10 +349,40 @@ module.exports = (io) => {
                         }
                         const reply = await generateResponse(SYSTEM_PROMPT, context, originalMessage)
                         socket.emit('bot_response', { message: reply })
+                        socket.emit('bot_suggestions', { suggestions: ['Más información', 'Cómo reservar', 'Ofertas'] })
                     } else {
-                        const stores = await Store.find({}).lean()
+                        const stores = await getStores()
                         const names = stores.map(s => s.name).join(', ')
                         socket.emit('bot_response', { message: `Por favor elige una de nuestras sucursales: ${names}. O escribe "cualquiera" para ver todas.` })
+                        socket.emit('bot_suggestions', { suggestions: stores.map(s => s.name).concat(['Cualquiera']) })
+                    }
+                    socket.emit('bot_typing', { typing: false })
+                    return
+                }
+
+                /* ---- Pending fuzzy confirm? ---- */
+                if (pendingFuzzyConfirm.has(socket.id)) {
+                    const { title, store } = pendingFuzzyConfirm.get(socket.id)
+                    if (isConfirming(message, title)) {
+                        pendingFuzzyConfirm.delete(socket.id)
+                        const { movies } = await searchCatalog(title, store)
+                        if (movies.length > 0) {
+                            conversationMemory.set(socket.id, { lastMovies: movies, lastStore: store, lastMessage: title, timestamp: Date.now() })
+                            const context = buildCatalogContext(title, movies, [], store)
+                            const reply = await generateResponse(SYSTEM_PROMPT, context, `informacion detallada de ${title}`)
+                            socket.emit('bot_response', { message: reply })
+                            socket.emit('bot_suggestions', { suggestions: ['Más información', 'Cómo reservar', 'Ofertas'] })
+                        } else {
+                            socket.emit('bot_response', { message: `No encontré información de "${title}". Intenta con otra búsqueda.` })
+                        }
+                    } else if (isRejecting(message)) {
+                        pendingFuzzyConfirm.delete(socket.id)
+                        socket.emit('bot_response', { message: 'Entendido. Dime de qué película te gustaría información.' })
+                        socket.emit('bot_suggestions', { suggestions: ['Ver catálogo completo', 'Películas en cartelera', 'Ofertas disponibles'] })
+                    } else {
+                        socket.emit('bot_response', { message: '¿Esa era la película que buscabas?' })
+                        const pending = pendingFuzzyConfirm.get(socket.id)
+                        socket.emit('bot_suggestions', { suggestions: [`Sí, ${pending.title}`, 'No, otra'] })
                     }
                     socket.emit('bot_typing', { typing: false })
                     return
@@ -382,33 +440,86 @@ module.exports = (io) => {
 
                     // No se detectó tienda, preguntar al usuario
                     pendingStoreSelection.set(socket.id, clientId)
-                    const stores = await Store.find({}).lean()
+                    const stores = await getStores()
                     const names = stores.map(s => s.name).join(', ')
                     socket.emit('bot_response', { message: `Claro, ¿de qué sucursal deseas atención? Tenemos: ${names}` })
+                    socket.emit('bot_suggestions', { suggestions: stores.map(s => s.name) })
                     socket.emit('bot_typing', { typing: false })
                     return
                 }
 
-                const catalogRelated = await isCatalogRelated(message)
+                /* ---- Follow-up? (usa memoria de conversación) ---- */
+                if (isFollowUp(message)) {
+                    const memory = conversationMemory.get(socket.id)
+                    if (memory && Date.now() - memory.timestamp < MEMORY_TTL && memory.lastMovies.length > 0) {
+                        const enhancedMsg = `${message} (refiriéndose a: ${memory.lastMovies.map(m => m.title).join(', ')})`
+                        const context = buildCatalogContext(enhancedMsg, memory.lastMovies, [], memory.lastStore)
+                        const reply = await generateResponse(SYSTEM_PROMPT, context, enhancedMsg)
+                        socket.emit('bot_response', { message: reply })
+                        socket.emit('bot_typing', { typing: false })
+                        return
+                    }
+                }
+
+                const catalogRelated = isCatalogRelated(message)
 
                 if (!catalogRelated) {
                     socket.emit('bot_response', { message: OFF_TOPIC_REPLY })
+                    socket.emit('bot_suggestions', { suggestions: ['Ver catálogo completo', 'Películas en cartelera', 'Ofertas disponibles'] })
                     socket.emit('bot_typing', { typing: false })
                     return
                 }
 
-                // Si no se mencionó tienda, preguntar primero antes de buscar
+                // Detectar tienda si se menciona (sin forzar aún)
                 const detectedStore = await detectStore(message)
+                const memory = conversationMemory.get(socket.id)
+
+                // ¿Pregunta por una película específica de la conversación anterior?
+                if (memory && Date.now() - memory.timestamp < MEMORY_TTL && memory.lastMovies.length > 0) {
+                    const normalizedMsg = normalizeText(message)
+                    let matchedMovie = memory.lastMovies.find(m => {
+                        const normalizedTitle = normalizeText(m.title)
+                        return normalizedMsg.includes(normalizedTitle)
+                    })
+
+                    if (matchedMovie) {
+                        const storeFilter = detectedStore || memory.lastStore
+                        const { movies } = await searchCatalog(matchedMovie.title, storeFilter)
+                        if (movies.length > 0) {
+                            conversationMemory.set(socket.id, { lastMovies: movies, lastStore: storeFilter, lastMessage: message, timestamp: Date.now() })
+                            const context = buildCatalogContext(message, movies, [], storeFilter)
+                            const reply = await generateResponse(SYSTEM_PROMPT, context, `informacion detallada de ${matchedMovie.title}`)
+                            socket.emit('bot_response', { message: reply })
+                            socket.emit('bot_typing', { typing: false })
+                            return
+                        }
+                    }
+
+                    // Fuzzy match: título con >=80% similitud
+                    const titles = memory.lastMovies.map(m => m.title)
+                    const fuzzyTitle = closestMatch(message, titles, 0.8)
+                    if (fuzzyTitle) {
+                        pendingFuzzyConfirm.set(socket.id, { title: fuzzyTitle, store: detectedStore || memory.lastStore })
+                        socket.emit('bot_response', { message: `¿Quisiste decir "${fuzzyTitle}"?` })
+                        socket.emit('bot_suggestions', { suggestions: [`Sí, ${fuzzyTitle}`, 'No, otra'] })
+                        socket.emit('bot_typing', { typing: false })
+                        return
+                    }
+                }
+
+                // Si no se mencionó tienda, preguntar primero antes de buscar
                 if (!detectedStore) {
                     pendingCatalogStore.set(socket.id, { originalMessage: message })
-                    const stores = await Store.find({}).lean()
+                    const stores = await getStores()
                     const names = stores.map(s => s.name).join(', ')
                     socket.emit('bot_response', { message: `¿De qué sucursal te gustaría información? Tenemos: ${names}. O dime "cualquiera" para ver todas.` })
+                    socket.emit('bot_suggestions', { suggestions: stores.map(s => s.name).concat(['Cualquiera']) })
                     socket.emit('bot_typing', { typing: false })
                     return
                 }
 
                 const { movies, directors } = await searchCatalog(message, detectedStore)
+                conversationMemory.set(socket.id, { lastMovies: movies, lastStore: detectedStore, lastMessage: message, timestamp: Date.now() })
                 const context = buildCatalogContext(message, movies, directors, detectedStore)
 
                 if (movies.length === 0) {
@@ -419,6 +530,7 @@ module.exports = (io) => {
 
                 const reply = await generateResponse(SYSTEM_PROMPT, context, message)
                 socket.emit('bot_response', { message: reply })
+                socket.emit('bot_suggestions', { suggestions: ['Más información', 'Cómo reservar', 'Ofertas'] })
             } catch (error) {
                 console.error('Error en chatHandler:', error.message, error.stack?.split('\n').slice(0, 4).join('\n'), '| Message:', message)
                 socket.emit('bot_response', { message: 'Ocurrió un error al procesar tu mensaje. Intenta de nuevo.' })
@@ -561,6 +673,7 @@ module.exports = (io) => {
         socket.on('disconnect', () => {
             pendingStoreSelection.delete(socket.id)
             pendingCatalogStore.delete(socket.id)
+            conversationMemory.delete(socket.id)
             console.log(`Usuario desconectado: ${socket.id}`)
         })
     })

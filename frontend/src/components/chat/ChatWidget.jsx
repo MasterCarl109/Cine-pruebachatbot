@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Fab, Paper, TextField, IconButton, Typography, Box, Avatar, Button } from '@mui/material'
+import { Fab, Paper, TextField, IconButton, Typography, Box, Avatar, Chip } from '@mui/material'
 import ChatIcon from '@mui/icons-material/Chat'
 import CloseIcon from '@mui/icons-material/Close'
 import SendIcon from '@mui/icons-material/Send'
@@ -22,6 +22,7 @@ export default function ChatWidget({ onOpenChange }) {
   const [typing, setTyping] = useState(false)
   const [chatMode, setChatMode] = useState('bot')
   const [sessionId, setSessionId] = useState(null)
+  const [suggestions, setSuggestions] = useState([])
   const endRef = useRef(null)
 
   const toggleOpen = () => {
@@ -54,8 +55,9 @@ export default function ChatWidget({ onOpenChange }) {
   useEffect(() => {
     initSocketToken()
 
-    const handleResponse = ({ message }) => addMessage('bot', message)
+    const handleResponse = ({ message }) => { addMessage('bot', message); setSuggestions([]) }
     const handleTyping = ({ typing: t }) => setTyping(t)
+    const handleSuggestions = ({ suggestions: s }) => setSuggestions(s)
     const handleTransfer = ({ sessionId: sid }) => {
       setSessionId(sid)
       addMessage('bot', 'Un gerente se conectará contigo en breve. Por favor espera...')
@@ -89,6 +91,7 @@ export default function ChatWidget({ onOpenChange }) {
 
     socket.on('bot_response', handleResponse)
     socket.on('bot_typing', handleTyping)
+    socket.on('bot_suggestions', handleSuggestions)
     socket.on('chat_transfer_offered', handleTransfer)
     socket.on('chat_accepted', handleAccepted)
     socket.on('manager_message', handleManagerMsg)
@@ -99,6 +102,7 @@ export default function ChatWidget({ onOpenChange }) {
     return () => {
       socket.off('bot_response', handleResponse)
       socket.off('bot_typing', handleTyping)
+      socket.off('bot_suggestions', handleSuggestions)
       socket.off('chat_transfer_offered', handleTransfer)
       socket.off('chat_accepted', handleAccepted)
       socket.off('manager_message', handleManagerMsg)
@@ -109,22 +113,23 @@ export default function ChatWidget({ onOpenChange }) {
     }
   }, [])
 
-  const handleSend = () => {
-    if (!input.trim()) return
-    const text = input
+  const handleSend = (text) => {
+    const msg = text || input
+    if (!msg.trim()) return
     setInput('')
 
     if (chatMode === 'manager' && sessionId) {
-      addMessage('user', text)
-      socket.emit('client_send_message', { sessionId, text })
+      addMessage('user', msg)
+      socket.emit('client_send_message', { sessionId, text: msg })
     } else {
-      addMessage('user', text)
-      socket.emit('send_message', { message: text })
+      addMessage('user', msg)
+      socket.emit('send_message', { message: msg })
     }
+    setSuggestions([])
   }
 
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(input) }
   }
 
   const headerIcon = chatMode === 'manager' ? <SupportAgentIcon /> : <SmartToyIcon />
@@ -165,6 +170,14 @@ export default function ChatWidget({ onOpenChange }) {
                 </Box>
               )
             })}
+            {suggestions.length > 0 && (
+              <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', justifyContent: 'flex-start' }}>
+                {suggestions.map((s, i) => (
+                  <Chip key={i} label={s} size="small" onClick={() => handleSend(s)}
+                    sx={{ color: 'white', bgcolor: 'rgba(255,255,255,0.12)', '&:hover': { bgcolor: 'rgba(255,255,255,0.25)' }, cursor: 'pointer' }} />
+                ))}
+              </Box>
+            )}
             {typing && (
               <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
                 <Avatar sx={{ width: 28, height: 28, bgcolor: 'primary.main' }}><SmartToyIcon sx={{ fontSize: 16 }} /></Avatar>
@@ -187,7 +200,7 @@ export default function ChatWidget({ onOpenChange }) {
                 }
               }}
             />
-            <IconButton color="primary" onClick={handleSend}><SendIcon /></IconButton>
+            <IconButton color="primary" onClick={() => handleSend(input)}><SendIcon /></IconButton>
           </Box>
         </Paper>
       )}

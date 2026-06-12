@@ -2,6 +2,7 @@ const express = require('express')
 const Movie = require('../models/Movie')
 const { authenticate, requireRole } = require('../middleware/auth')
 const { movieRules, movieUpdateRules, offerRules, offerUpdateRules, mongoIdParam } = require('../middleware/validate')
+const { buildAccentRegex } = require('../services/searchHelper')
 
 const router = express.Router()
 
@@ -18,13 +19,43 @@ router.get('/', async (req, res) => {
 
         if (genre) filter.genres = genre
         if (store) filter['screenings.store'] = store
-        if (search) filter.$text = { $search: search }
 
-        const movies = await Movie.find(filter)
-            .populate('director', 'name')
-            .populate('genres', 'name')
-            .populate('screenings.store', 'name')
-            .populate('offers.store', 'name')
+        let movies
+
+        if (search) {
+            filter.$text = { $search: search }
+            movies = await Movie.find(filter)
+                .populate('director', 'name')
+                .populate('genres', 'name')
+                .populate('screenings.store', 'name')
+                .populate('offers.store', 'name')
+
+            // Fallback a $regex si $text no da resultados
+            if (movies.length === 0) {
+                delete filter.$text
+                const keywords = search.toLowerCase().split(/\s+/).filter(w => w.length > 2)
+                if (keywords.length > 0) {
+                    const regexConditions = keywords.map(kw => ({
+                        $or: [
+                            { title: { $regex: buildAccentRegex(kw) } },
+                            { synopsis: { $regex: buildAccentRegex(kw) } }
+                        ]
+                    }))
+                    movies = await Movie.find({ $or: regexConditions, ...filter })
+                        .populate('director', 'name')
+                        .populate('genres', 'name')
+                        .populate('screenings.store', 'name')
+                        .populate('offers.store', 'name')
+                }
+            }
+        } else {
+            movies = await Movie.find(filter)
+                .populate('director', 'name')
+                .populate('genres', 'name')
+                .populate('screenings.store', 'name')
+                .populate('offers.store', 'name')
+        }
+
         res.json(movies)
     } catch (error) {
         res.status(500).json({ error: error.message })

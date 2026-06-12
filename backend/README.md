@@ -1,7 +1,7 @@
 # CineClub Backend
 
-Backend del asistente virtual de CineClub, una cadena de videoclubs.  
-Sistema de catálogo con chatbot impulsado por Ollama + Socket.io en tiempo real.
+Backend del sistema de reservas de CineClub.  
+Catálogo de películas, autenticación por sesiones opacas, reservas con tarjeta virtual, y chatbot con Ollama + Socket.io en tiempo real.
 
 ---
 
@@ -9,10 +9,13 @@ Sistema de catálogo con chatbot impulsado por Ollama + Socket.io en tiempo real
 
 | Fase | Estado |
 |------|--------|
-| **Fase 1 — Fundación** (server, modelos, conexión DB, auth, seed) | ✅ Completada |
-| **Fase 2 — CRUD Admin** (rutas protegidas para movies/directors/genres/stores) | ✅ Completada |
-| **Fase 3 — Servicio Ollama** (ollamaService + intentFilter) | ✅ Completada |
-| **Fase 4 — Chat en tiempo real** (chatHandler con Ollama + búsqueda en BD) | ✅ Completada |
+| **Fundación** (server, modelos, DB, auth opaca, seed) | ✅ |
+| **CRUD Admin** (movies, directors, genres, stores, users) con validación | ✅ |
+| **Chatbot** (intentFilter local, generateResponse con retry, memoria de conversación) | ✅ |
+| **Chat en tiempo real** (Socket.IO, transferencia a manager, quick replies) | ✅ |
+| **Reservas** (atómico, pago con tarjeta virtual + PIN, reembolso) | ✅ |
+| **Portal cliente** (catálogo, registro, login, mis reservas) | ✅ |
+| **Panel staff** (admin:global, manager:su tienda, employee:inventario+reservas) | ✅ |
 
 ---
 
@@ -32,10 +35,10 @@ backend/
 │   ├── Store.js             # Schema (name, address, phone)
 │   └── User.js              # Schema con bcrypt + comparePassword
 ├── services/
-│   ├── ollamaService.js      # generateResponse() + classifyIntent()
-│   └── intentFilter.js       # isCatalogRelated() con blacklist + clasificación Ollama
+│   ├── ollamaService.js      # generateResponse() con retry automático + validación de respuesta genérica
+│   └── intentFilter.js       # isCatalogRelated() 100% local: cinema keywords + blacklist (sin Ollama)
 ├── sockets/
-│   └── chatHandler.js       # Eventos Socket.io: send_message → filtro → búsqueda → Ollama → respuesta
+│   └── chatHandler.js       # Eventos Socket.io: chatbot + chat manager-cliente + memoria de conversación
 ├── routes/
 │   ├── auth.js               # POST /api/auth/login
 │   ├── movies.js             # CRUD películas (protegido)
@@ -43,7 +46,8 @@ backend/
 │   ├── genres.js             # CRUD géneros (protegido)
 │   └── stores.js             # CRUD tiendas (protegido)
 ├── middleware/
-│   └── auth.js              # Middleware JWT (verifica token + rol admin)
+│   ├── auth.js              # Middleware de sesión opaca (cookie httpOnly → MongoDB Session)
+│   └── validate.js           # Validación de request body con express-validator
 └── seed.js                  # Poblado inicial de la BD con datos de prueba
 ```
 
@@ -85,8 +89,9 @@ El servidor arrancará en `http://localhost:3000`.
 | `PORT` | Puerto del servidor | `3000` |
 | `MONGODB_URI` | URI de conexión MongoDB | `mongodb://localhost:27017/cineclub` |
 | `OLLAMA_URL` | URL de la API de Ollama | `http://localhost:11434` |
-| `OLLAMA_MODEL` | Modelo de Ollama a usar | `llama3.2` |
-| `JWT_SECRET` | Secreto para firmar tokens JWT | `your-secret-key-change-in-production` |
+| `OLLAMA_MODEL` | Modelo principal de Ollama | `llama3.2:1b` |
+| `FALLBACK_MODEL` | Modelo de respaldo (si el principal falla) | `qwen2.5:3b` |
+| `ALLOWED_ORIGINS` | Orígenes CORS permitidos (separados por coma) | `http://localhost:5173,http://localhost:5174` |
 
 ---
 
@@ -97,9 +102,11 @@ El servidor arrancará en `http://localhost:3000`.
 | Método | Ruta | Descripción |
 |--------|------|-------------|
 | GET | `/api/health` | Health check del servicio |
-| POST | `/api/auth/login` | Inicio de sesión admin → devuelve JWT |
+| POST | `/api/auth/login` | Inicio de sesión staff → cookie httpOnly con token opaco |
+| POST | `/api/client-auth/login` | Inicio de sesión cliente → cookie httpOnly + socketToken |
+| POST | `/api/client-auth/register` | Registro público de cliente (genera tarjeta virtual) |
 
-### Protegidas (requieren `Authorization: Bearer <token>`)
+### Protegidas (requieren cookie de sesión — httpOnly, sameSite: lax)
 
 | Método | Ruta | Descripción |
 |--------|------|-------------|
@@ -132,9 +139,18 @@ El servidor arrancará en `http://localhost:3000`.
 
 | Evento | Dirección | Descripción |
 |--------|-----------|-------------|
-| `send_message` | Cliente → Servidor | Envía un mensaje al chat |
-| `bot_response` | Servidor → Cliente | Respuesta del asistente CineClub |
+| `send_message` | Cliente → Servidor | Mensaje al chatbot (procesa intención, busca catálogo, genera respuesta con Ollama) |
+| `bot_response` | Servidor → Cliente | Respuesta del chatbot |
+| `bot_suggestions` | Servidor → Cliente | Sugerencias de respuesta rápida (chips clickeables) |
 | `bot_typing` | Servidor → Cliente | Indicador de escritura (`{ typing: true/false }`) |
+| `manager_join` | Manager → Servidor | Manager se conecta a sala de atención |
+| `manager_accept_chat` | Manager → Servidor | Acepta una solicitud de chat en espera |
+| `manager_send_message` | Manager → Servidor | Envía mensaje al cliente |
+| `manager_close_chat` | Manager → Servidor | Cierra la conversación |
+| `client_send_message` | Cliente → Servidor | Cliente responde al manager |
+| `new_chat_request` | Servidor → Managers | Nueva solicitud de chat disponible |
+| `chat_accepted` | Servidor → Cliente | Manager aceptó el chat |
+| `chat_closed` | Servidor → Cliente | Chat finalizado por el manager |
 
 ---
 
@@ -143,14 +159,14 @@ El servidor arrancará en `http://localhost:3000`.
 ### Movie
 ```
 title: String (requerido)
-year: Number
-synopsis: String (índice de texto)
+price: Number
+synopsis: String
 duration: Number
-rating: G | PG | PG-13 | R | NC-17
+rating: String
 director: ObjectId → Director
 genres: [ObjectId → Genre]
-availability: [{ store: ObjectId → Store, copies: Number }]
-imageUrl: String
+screenings: [{ store, room, date, time, totalSeats, bookedSeats }]
+offers: [{ store?, description, discountPercent, startDate, endDate, active }]
 ```
 
 ### Director
@@ -170,13 +186,16 @@ name: String (requerido, único)
 name: String (requerido)
 address: String
 phone: String
+rooms: [{ name, capacity }]
 ```
 
 ### User
 ```
 email: String (requerido, único)
 password: String (hasheado con bcrypt)
-role: 'admin'
+role: 'admin' | 'manager' | 'employee'
+store: ObjectId → Store (opcional, null para admin)
+active: Boolean
 ```
 
 ---
@@ -185,17 +204,9 @@ role: 'admin'
 
 Ejecutar `npm run seed` para poblar la BD con:
 
-- **10 películas** (Psicosis, Inception, Barbie, etc.)
-- **5 directores** (Hitchcock, Nolan, Gerwig, del Toro, Spike Lee)
-- **6 géneros** (Terror, Comedia, Drama, Ciencia Ficción, Suspenso, Acción)
-- **3 tiendas** (Centro, Norte, Sur)
-- **1 admin** — email: `admin@cineclub.com` / password: `admin123`
+- **Películas** con `screenings` planos (fecha+hora individuales) en distintas salas/tiendas
+- **Directores**, **géneros**, **3 tiendas** (Centro, Norte, Sur) con 5 salas c/u
+- **Usuarios staff**: admin, manager (Centro/Sur), employee (Norte)
+- **1 cliente** (cliente@cineclub.com / cliente123, saldo ~$99,590)
 
----
 
-## Próximos pasos (Fase 5)
-
-1. Crear frontend React con Vite
-2. Interfaz pública: galería de películas con filtros + widget de chat flotante
-3. Panel admin: login, CRUD de películas/directores/géneros/tiendas
-4. Conectar Socket.io desde el frontend para el chat en tiempo real
