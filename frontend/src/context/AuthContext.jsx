@@ -10,7 +10,6 @@ export function AuthProvider({ children }) {
   const navigate = useNavigate()
 
   const setSessionUser = useCallback((userData) => {
-    localStorage.setItem('user', JSON.stringify(userData))
     setUser(userData)
   }, [])
 
