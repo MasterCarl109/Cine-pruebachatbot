@@ -105,7 +105,7 @@ const seed = async () => {
         // Scheduling: each movie gets a dedicated room per store (no time conflicts)
         const movies = [
             {
-                title: 'Psicosis', duration: 109, rating: 'R', price: 65,
+                title: 'Psicosis', duration: 109, rating: 'R', price: 22,
                 releaseDate: new Date('1960-09-08'),
                 synopsis: 'Una secretaria huye con dinero robado y se encuentra con un misterioso motel.',
                 director: hitchcock._id, genres: [terror._id, suspenso._id],
@@ -115,7 +115,7 @@ const seed = async () => {
                 ]
             },
             {
-                title: 'Los pájaros', duration: 119, rating: 'PG-13', price: 60,
+                title: 'Los pájaros', duration: 119, rating: 'PG-13', price: 20,
                 releaseDate: new Date('1963-03-28'),
                 synopsis: 'Aves de todo tipo comienzan a atacar sin razón aparente a los habitantes de un pueblo.',
                 director: hitchcock._id, genres: [terror._id, suspenso._id],
@@ -124,7 +124,7 @@ const seed = async () => {
                 ]
             },
             {
-                title: 'La ventana indiscreta', duration: 112, rating: 'PG', price: 60,
+                title: 'La ventana indiscreta', duration: 112, rating: 'PG', price: 18,
                 releaseDate: new Date('1954-09-01'),
                 synopsis: 'Un fotógrafo confinado a una silla de ruedas cree haber presenciado un asesinato.',
                 director: hitchcock._id, genres: [suspenso._id, drama._id],
@@ -133,7 +133,7 @@ const seed = async () => {
                 ]
             },
             {
-                title: 'Inception', duration: 148, rating: 'PG-13', price: 120,
+                title: 'Inception', duration: 148, rating: 'PG-13', price: 30,
                 releaseDate: new Date('2010-07-16'),
                 synopsis: 'Un ladrón especializado en extraer secretos del subconsciente a través de los sueños.',
                 director: nolan._id, genres: [sciFi._id, accion._id, suspenso._id],
@@ -148,7 +148,7 @@ const seed = async () => {
                 ]
             },
             {
-                title: 'Interestelar', duration: 169, rating: 'PG-13', price: 120,
+                title: 'Interestelar', duration: 169, rating: 'PG-13', price: 28,
                 releaseDate: new Date('2014-11-07'),
                 synopsis: 'Un equipo de exploradores viaja a través de un agujero de gusano en busca de un nuevo hogar para la humanidad.',
                 director: nolan._id, genres: [sciFi._id, drama._id],
@@ -157,7 +157,7 @@ const seed = async () => {
                 ]
             },
             {
-                title: 'Lady Bird', duration: 94, rating: 'R', price: 55,
+                title: 'Lady Bird', duration: 94, rating: 'R', price: 20,
                 releaseDate: new Date('2017-09-01'),
                 synopsis: 'Una adolescente navega su último año de preparatoria y su relación con su madre.',
                 director: gerwig._id, genres: [comedia._id, drama._id],
@@ -169,7 +169,7 @@ const seed = async () => {
                 ]
             },
             {
-                title: 'Barbie', duration: 114, rating: 'PG-13', price: 90,
+                title: 'Barbie', duration: 114, rating: 'PG-13', price: 25,
                 releaseDate: new Date('2023-07-21'),
                 synopsis: 'Barbie y Ken viven en un mundo perfecto hasta que una crisis existencial los lleva al mundo real.',
                 director: gerwig._id, genres: [comedia._id],
@@ -185,7 +185,7 @@ const seed = async () => {
                 ]
             },
             {
-                title: 'El laberinto del fauno', duration: 118, rating: 'R', price: 80,
+                title: 'El laberinto del fauno', duration: 118, rating: 'R', price: 22,
                 releaseDate: new Date('2006-10-11'),
                 synopsis: 'En la España de 1944, una niña descubre un mundo mágico y misterioso.',
                 director: delToro._id, genres: [drama._id, terror._id],
@@ -195,7 +195,7 @@ const seed = async () => {
                 ]
             },
             {
-                title: 'La forma del agua', duration: 123, rating: 'R', price: 80,
+                title: 'La forma del agua', duration: 123, rating: 'R', price: 20,
                 releaseDate: new Date('2017-12-01'),
                 synopsis: 'Una conserje de un laboratorio secreto se enamora de una criatura anfibia.',
                 director: delToro._id, genres: [drama._id],
@@ -204,7 +204,7 @@ const seed = async () => {
                 ]
             },
             {
-                title: 'Haz lo correcto', duration: 120, rating: 'R', price: 70,
+                title: 'Haz lo correcto', duration: 120, rating: 'R', price: 18,
                 releaseDate: new Date('1989-06-30'),
                 synopsis: 'Un día de verano en un barrio de Brooklyn, las tensiones raciales alcanzan su punto crítico.',
                 director: spikeLee._id, genres: [drama._id, comedia._id],

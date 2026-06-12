@@ -7,14 +7,17 @@ const ChatSession = require('../models/ChatSession')
 const Client = require('../models/Client')
 const Store = require('../models/Store')
 
-const OFF_TOPIC_REPLY = 'Solo puedo ayudarte con nuestro catálogo de películas. ¿Buscas algún género o director en particular?'
+const OFF_TOPIC_REPLY = 'Solo hablo de cine y de nuestro catálogo de CineClub. ¿Buscas alguna película, género o director en particular?'
 
-const SYSTEM_PROMPT = 'Eres el asistente virtual de CineClub, un cine con múltiples sucursales. Responde en texto natural, amable y conversacional. NO uses JSON ni listas técnicas. Solo puedes responder usando la información del catálogo que se te proporciona. Si no encuentras suficiente información, indica amablemente que no tienes ese dato. Nunca inventes títulos, directores, horarios o disponibilidad.\n\nEjemplos de respuestas correctas:\n- Sobre horarios: "Inception se proyecta hoy en la tienda Centro a las 19:00 en la Sala 1, con 8 asientos disponibles."\n- Sobre ofertas: "Actualmente hay 20% de descuento en Dune en la tienda Sur, vigente del 01/06/2026 al 15/06/2026."\n- Sobre descuento infantil: "El boleto infantil tiene 30% de descuento adicional sobre el precio base."\n- Sala llena: "Los asientos para esta función están agotados."'
+const SYSTEM_PROMPT = 'Eres el asistente virtual de CineClub, un cine con múltiples sucursales. Habla como un cinéfilo conocedor: natural, entusiasta del cine, con opiniones basadas en los datos del catálogo. Responde siempre en español.\n\nREGLAS ESTRICTAS:\n- Solo puedes usar la información del catálogo que se te proporciona. NUNCA inventes títulos, directores, horarios, fechas, precios o disponibilidad.\n- Si no tienes suficiente información, dilo directamente: "No tengo ese dato en el catálogo".\n- NO uses JSON ni formatos técnicos. Texto natural solamente.\n- NUNCA hagas chistes, cuentas matemáticas o temas ajenos al cine.\n\nInstrucciones:\n- Siempre incluye el precio (ej: "$25 por boleto").\n- Si hay funciones pero no hoy, menciona la próxima fecha disponible.\n- Puedes dar opiniones sobre películas basadas en los datos (popularidad, género, sinopsis): ej: "Inception es un thriller de ciencia ficción muy popular, tiene varias funciones disponibles".\n- Cuando el usuario pregunte por ofertas, promociones o géneros específicos, responde con una lista concisa de nombres y precios. Da más detalles solo si el usuario los pide.\n- Si corresponde, explica cómo reservar: iniciar sesión, ir al catálogo, elegir función y asientos, pagar con tarjeta virtual + PIN de 6 dígitos.'
 
 const TRANSFER_KEYWORDS = ['gerente', 'manager', 'humano', 'asesor', 'persona real', 'hablar con', 'atencion', 'ayuda humana', 'representante', 'supervisor', 'transferir', 'transferencia', 'me comuniques', 'me conectes', 'me pongas', 'operador']
 
 // Rastrea sockets esperando selección de sucursal antes de transferir a manager
 const pendingStoreSelection = new Map()
+
+// Rastrea sockets esperando selección de sucursal para consultar catálogo
+const pendingCatalogStore = new Map()
 
 const STOP_WORDS = new Set([
     'hola', 'buenos', 'buenas', 'dias', 'tardes', 'noches',
@@ -41,7 +44,10 @@ const STOP_WORDS = new Set([
     'cualquier', 'cualquiera', 'cuanto', 'cuanta', 'cuantos', 'cuantas',
     'esta', 'este', 'esto', 'estos', 'estas',
     'esa', 'ese', 'eso', 'esas', 'esos',
-    'aquel', 'aquella', 'aquello', 'aquellos', 'aquellas'
+    'aquel', 'aquella', 'aquello', 'aquellos', 'aquellas',
+    'oferta', 'ofertas', 'promocion', 'promociones',
+    'precio', 'precios', 'descuento', 'descuentos',
+    'costo', 'costos', 'tarifa', 'tarifas'
 ])
 
 function escapeRegex(string) {
@@ -81,11 +87,18 @@ function populates() {
     ].map(f => ({ path: f, select: 'name' }))
 }
 
-async function searchCatalog(message) {
+async function searchCatalog(message, store = null) {
     const keywords = extractKeywords(message)
 
     if (keywords.length === 0) {
-        return { movies: [], directors: [], matchedStore: null }
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        const filter = { 'screenings.date': { $gte: today } }
+        if (store) filter['screenings.store'] = store._id
+        const allMovies = await Movie.find(filter)
+            .populate(populates())
+            .lean()
+        return { movies: allMovies, directors: [] }
     }
 
     const today = new Date()
@@ -94,10 +107,9 @@ async function searchCatalog(message) {
         'screenings.date': { $gte: today }
     }
 
-    // Detectar si el mensaje menciona una tienda y filtrar solo sus funciones
-    const matchedStore = await detectStore(message)
-    if (matchedStore) {
-        activeFilter['screenings.store'] = matchedStore._id
+    // Si se proporcionó una tienda, filtrar solo sus funciones
+    if (store) {
+        activeFilter['screenings.store'] = store._id
     }
 
     const regexConditions = keywords.map(kw => ({
@@ -139,10 +151,19 @@ async function searchCatalog(message) {
         if (!movieMap.has(id)) movieMap.set(id, m)
     }
 
+    // Fallback: si keywords no matchearon nada, devolver catálogo activo completo
+    if (movieMap.size === 0) {
+        const fallbackFilter = { 'screenings.date': { $gte: today } }
+        if (store) fallbackFilter['screenings.store'] = store._id
+        const fallbackMovies = await Movie.find(fallbackFilter)
+            .populate(populates())
+            .lean()
+        return { movies: fallbackMovies, directors: [] }
+    }
+
     return {
         movies: Array.from(movieMap.values()),
-        directors,
-        matchedStore
+        directors
     }
 }
 
@@ -165,6 +186,65 @@ async function detectStore(message) {
         if (normalized.includes(name)) return store
     }
     return null
+}
+
+function buildCatalogContext(message, movies, directors, matchedStore = null) {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const now = new Date()
+
+    return {
+        consulta: message,
+        tienda_mencionada: matchedStore?.name || null,
+        peliculas_encontradas: movies.map(m => {
+            const activeScreenings = m.screenings
+                ?.filter(s => new Date(s.date) >= today) || []
+
+            const totalBooked = activeScreenings.reduce((sum, s) =>
+                sum + (s.bookedSeats || 0), 0)
+
+            const activeOffers = m.offers
+                ?.filter(o => o.active && new Date(o.startDate) <= now && new Date(o.endDate) >= now)
+                .filter(o => !matchedStore || !o.store || String(o.store._id || o.store) === String(matchedStore._id)) || []
+
+            const proximaFuncion = activeScreenings.length > 0
+                ? new Date(activeScreenings.reduce((min, s) => {
+                    const d = new Date(s.date).getTime()
+                    return d < min ? d : min
+                }, Infinity)).toLocaleDateString('es-MX')
+                : null
+
+            return {
+                titulo: m.title,
+                sinopsis: m.synopsis,
+                duracion: m.duration,
+                clasificacion: m.rating,
+                director: m.director?.name || 'Desconocido',
+                generos: m.genres?.map(g => g.name) || [],
+                precio: m.price,
+                proximaFuncion,
+                popularidad: totalBooked + activeScreenings.length,
+                ofertas: activeOffers.map(o => ({
+                    descripcion: o.description,
+                    descuento: `${o.discountPercent}%`,
+                    tienda: o.store?.name || 'Todas las tiendas',
+                    vigencia: `${new Date(o.startDate).toLocaleDateString('es-MX')} - ${new Date(o.endDate).toLocaleDateString('es-MX')}`
+                })),
+                disponibilidad: activeScreenings.map(s => ({
+                    tienda: s.store?.name || 'Desconocida',
+                    fecha: new Date(s.date).toLocaleDateString('es-MX'),
+                    hora: s.time,
+                    disponibles: (s.totalSeats || 10) - (s.bookedSeats || 0),
+                    total: s.totalSeats || 10
+                })) || []
+            }
+        }),
+        directores_encontrados: directors.map(d => ({
+            nombre: d.name,
+            nacionalidad: d.nationality,
+            biografía: d.biography
+        }))
+    }
 }
 
 module.exports = (io) => {
@@ -221,6 +301,32 @@ module.exports = (io) => {
                         socket.emit('bot_response', { message: `No reconozco esa sucursal. Por favor elige una de las siguientes: ${names}` })
                         socket.emit('bot_typing', { typing: false })
                     }
+                    return
+                }
+
+                /* ---- Pending catalog store selection? ---- */
+                if (pendingCatalogStore.has(socket.id)) {
+                    const { originalMessage } = pendingCatalogStore.get(socket.id)
+                    const store = await detectStore(message)
+                    const skipWords = ['cualquiera', 'no importa', 'cualquier', 'da igual', 'no se', 'no sé']
+                    const isSkip = skipWords.some(w => message.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(w))
+                    if (store || isSkip) {
+                        pendingCatalogStore.delete(socket.id)
+                        const { movies, directors } = await searchCatalog(originalMessage, store)
+                        const context = buildCatalogContext(originalMessage, movies, directors, store)
+                        if (movies.length === 0) {
+                            socket.emit('bot_response', { message: 'No encontré películas en esa sucursal. Intenta con otra búsqueda.' })
+                            socket.emit('bot_typing', { typing: false })
+                            return
+                        }
+                        const reply = await generateResponse(SYSTEM_PROMPT, context, originalMessage)
+                        socket.emit('bot_response', { message: reply })
+                    } else {
+                        const stores = await Store.find({}).lean()
+                        const names = stores.map(s => s.name).join(', ')
+                        socket.emit('bot_response', { message: `Por favor elige una de nuestras sucursales: ${names}. O escribe "cualquiera" para ver todas.` })
+                    }
+                    socket.emit('bot_typing', { typing: false })
                     return
                 }
 
@@ -291,59 +397,30 @@ module.exports = (io) => {
                     return
                 }
 
-                const { movies, directors, matchedStore } = await searchCatalog(message)
+                // Si no se mencionó tienda, preguntar primero antes de buscar
+                const detectedStore = await detectStore(message)
+                if (!detectedStore) {
+                    pendingCatalogStore.set(socket.id, { originalMessage: message })
+                    const stores = await Store.find({}).lean()
+                    const names = stores.map(s => s.name).join(', ')
+                    socket.emit('bot_response', { message: `¿De qué sucursal te gustaría información? Tenemos: ${names}. O dime "cualquiera" para ver todas.` })
+                    socket.emit('bot_typing', { typing: false })
+                    return
+                }
 
-                const context = {
-                    consulta: message,
-                    tienda_mencionada: matchedStore?.name || null,
-                    peliculas_encontradas: movies.map(m => {
-                        const today = new Date()
-                        today.setHours(0, 0, 0, 0)
-                        const activeScreenings = m.screenings
-                            ?.filter(s => new Date(s.date) >= today) || []
+                const { movies, directors } = await searchCatalog(message, detectedStore)
+                const context = buildCatalogContext(message, movies, directors, detectedStore)
 
-                        const totalBooked = activeScreenings.reduce((sum, s) =>
-                            sum + (s.bookedSeats || 0), 0)
-
-                        const now = new Date()
-                        const activeOffers = m.offers
-                            ?.filter(o => o.active && new Date(o.startDate) <= now && new Date(o.endDate) >= now) || []
-
-                        return {
-                            titulo: m.title,
-                            sinopsis: m.synopsis,
-                            duracion: m.duration,
-                            clasificacion: m.rating,
-                            director: m.director?.name || 'Desconocido',
-                            generos: m.genres?.map(g => g.name) || [],
-                            precio: m.price,
-                            popularidad: totalBooked + activeScreenings.length,
-                            ofertas: activeOffers.map(o => ({
-                                descripcion: o.description,
-                                descuento: `${o.discountPercent}%`,
-                                tienda: o.store?.name || 'Todas las tiendas',
-                                vigencia: `${new Date(o.startDate).toLocaleDateString('es-MX')} - ${new Date(o.endDate).toLocaleDateString('es-MX')}`
-                            })),
-                            disponibilidad: activeScreenings.map(s => ({
-                                tienda: s.store?.name || 'Desconocida',
-                                fecha: new Date(s.date).toLocaleDateString('es-MX'),
-                                hora: s.time,
-                                disponibles: (s.totalSeats || 10) - (s.bookedSeats || 0),
-                                total: s.totalSeats || 10
-                            })) || []
-                        }
-                    }),
-                    directores_encontrados: directors.map(d => ({
-                        nombre: d.name,
-                        nacionalidad: d.nationality,
-                        biografía: d.biography
-                    }))
+                if (movies.length === 0) {
+                    socket.emit('bot_response', { message: 'No encontré películas en esa sucursal. Intenta con otra búsqueda.' })
+                    socket.emit('bot_typing', { typing: false })
+                    return
                 }
 
                 const reply = await generateResponse(SYSTEM_PROMPT, context, message)
                 socket.emit('bot_response', { message: reply })
             } catch (error) {
-                console.error('Error en chatHandler:', error.message)
+                console.error('Error en chatHandler:', error.message, error.stack?.split('\n').slice(0, 4).join('\n'), '| Message:', message)
                 socket.emit('bot_response', { message: 'Ocurrió un error al procesar tu mensaje. Intenta de nuevo.' })
             } finally {
                 socket.emit('bot_typing', { typing: false })
@@ -483,6 +560,7 @@ module.exports = (io) => {
 
         socket.on('disconnect', () => {
             pendingStoreSelection.delete(socket.id)
+            pendingCatalogStore.delete(socket.id)
             console.log(`Usuario desconectado: ${socket.id}`)
         })
     })

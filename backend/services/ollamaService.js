@@ -1,7 +1,8 @@
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434'
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:3b'
 const TIMEOUT_MS = 15000
-const CLASSIFY_MODEL = 'deepseek-r1:7b'
+const CLASSIFY_MODEL = process.env.CLASSIFY_MODEL || 'llama3.2:1b'
+const CLASSIFY_TIMEOUT_MS = 5000
 
 async function fetchWithTimeout(url, options, timeoutMs = TIMEOUT_MS) {
     const controller = new AbortController()
@@ -32,7 +33,8 @@ async function generateResponse(systemPrompt, context, userMessage) {
     })
 
     if (!response.ok) {
-        throw new Error(`Ollama error: ${response.status} ${response.statusText}`)
+        const body = await response.text().catch(() => '')
+        throw new Error(`Ollama generate error: ${response.status} ${response.statusText} | ${body}`)
     }
 
     const data = await response.json()
@@ -45,7 +47,11 @@ function buildContextText(context) {
         const sorted = [...context.peliculas_encontradas].sort((a, b) => b.popularidad - a.popularidad)
         parts.push('Películas disponibles en el catálogo:')
         sorted.forEach(m => {
-            let line = `- "${m.titulo}" - ${m.sinopsis}. Director: ${m.director}. Géneros: ${m.generos?.join(', ') || 'N/A'}. Precio: $${m.precio}. Popularidad: ${m.popularidad}.`
+            let line = `- "${m.titulo}" - ${m.sinopsis}. Director: ${m.director}. Géneros: ${m.generos?.join(', ') || 'N/A'}. Precio: $${m.precio}.`
+            if (m.proximaFuncion) {
+                line += ` Próxima función: ${m.proximaFuncion}.`
+            }
+            line += ` Popularidad: ${m.popularidad}.`
             if (m.ofertas?.length) {
                 line += ` Ofertas: ${m.ofertas.map(o => `${o.descripcion} (${o.descuento} de descuento en ${o.tienda}, vigente del ${o.vigencia})`).join(', ')}.`
             }
@@ -83,9 +89,9 @@ function cleanResponse(text) {
 
 async function classifyIntent(userMessage) {
     const prompt = `[INST] <<SYS>>
-You are a strict classifier. Answer ONLY with the word "catalogo" or "otro".
-- catalogo: questions about movies, directors, genres, stores, rental, availability, film recommendations.
-- otro: EVERYTHING else: sports, politics, weather, music, cooking, tech, health, math, calculations, science, history, travel, games, news, personal questions, or any topic NOT related to a video club catalog.
+You are a classifier for a cinema chatbot. Answer ONLY with "catalogo" or "otro".
+- catalogo: ANY question about movies, cinema, film recommendations, actors, directors, genres, showtimes, prices, stores, promotions, opinions about films, film comparisons, or anything related to movies/cinema.
+- otro: sports, politics, weather, music, cooking, tech, health, math, calculations, science, news, games, or any topic NOT related to cinema or movies.
 <</SYS>>
 
 Mensaje: "${userMessage}"
@@ -100,10 +106,11 @@ Respuesta: [/INST]`
             stream: false,
             options: { temperature: 0.1 }
         })
-    })
+    }, CLASSIFY_TIMEOUT_MS)
 
     if (!response.ok) {
-        throw new Error(`Ollama error: ${response.status} ${response.statusText}`)
+        const body = await response.text().catch(() => '')
+        throw new Error(`Ollama classify error: ${response.status} ${response.statusText} | ${body}`)
     }
 
     const data = await response.json()

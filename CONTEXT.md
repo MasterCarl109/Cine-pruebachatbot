@@ -104,9 +104,25 @@
 
 | **7** — Validación de request body | `middleware/validate.js` creado con `express-validator`. Cubre auth, clientAuth, movies, directors, genres, stores (rooms), reservations, users. Cada ruta POST/PUT valida tipos, formato email, MongoId, rangos numéricos, PIN 6 dígitos. Errores devueltos como `{ error, details }`. |
 
+| **8** — Chatbot robustness | `Math.min(...spread)` reemplazado por `reduce` en `buildCatalogContext` (previene stack overflow). Error logging mejorado en `chatHandler.js` (incluye stack trace y mensaje original) y `ollamaService.js` (incluye body de respuesta en errores HTTP). Server restart aplica cambios. Búsqueda de catálogo verificada: género + filtro de tienda funciona correctamente. |
+| **9** — Manager 403 en PUT/POST screenings | `PUT /movies/:id` reescrito para manager: ahora _mergea_ screenings (conserva las de otras tiendas, reemplaza solo las propias) en vez de fallar con 403 por incluir screenings de otras tiendas en el body. `GET /auth/me` tolera sesiones antiguas sin campo `type` (infiere desde `role`). `inputProps` migrado a `slotProps.htmlInput` en todos los componentes (MUI 9 / React 19 compat). |
+| **10** — Chatbot fallback para ofertas/géneros | `searchCatalog` ahora incluye fallback: si keywords no matchean nada, devuelve catálogo activo completo de la tienda (o global). Palabras de ofertas/precios agregadas a `STOP_WORDS`. `SYSTEM_PROMPT` actualizado para listar nombres + precio en consultas de ofertas/géneros. |
+
 ## Pendiente a futuro
 
-- (ninguno por el momento)
+### Fase 1 — Bajo esfuerzo, alto impacto
+- **1a** Reemplazar `classifyIntent` por lógica 100% local (blacklist + keyword matching) — elimina 15s de latencia por consulta
+- **1b** Agregar memoria de conversación por socket (`Map<socketId, { lastMovies, lastStore }>`) para permitir seguimiento ("cuéntame más de esa")
+- **1c** Retry automático en `generateResponse`: si Ollama timeout, reintentar con modelo más pequeño antes de rendirse
+
+### Fase 2 — Experiencia de usuario
+- **2a** Mejorar `detectStore` con sinónimos y frases como "sucursal X"
+- **2b** Agregar términos cinéfilos a `STOP_WORDS`: cartelera, estrenos, boletos, entradas, funciones, horarios
+- **2c** Quick replies / botones sugeridos en `ChatWidget.jsx` (escuchar `bot_suggestions` y renderizar chips)
+
+### Fase 3 — Calidad de respuesta
+- **3a** Validar respuesta de Ollama: si es genérica o contiene "no tengo información", complementar con datos estructurados
+- **3b** Evaluar `llama3.2:1b` como modelo principal (más rápido, configurable por env var)
 
 ## Reglas de negocio
 

@@ -129,7 +129,7 @@ router.post('/logout', async (req, res) => {
 
 router.get('/me', authenticate, async (req, res) => {
     try {
-        if (req.user.type !== 'client') {
+        if (req.user.type !== 'client' && req.user.role !== 'client') {
             return res.status(403).json({ error: 'Solo clientes pueden acceder a este perfil' })
         }
         const client = await Client.findById(req.user.id).select('name email virtualCard.cardNumber virtualCard.balance')

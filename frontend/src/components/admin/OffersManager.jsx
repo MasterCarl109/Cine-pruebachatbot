@@ -1,11 +1,16 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Box, Typography, Button, IconButton, Chip, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, FormControl, InputLabel, Select, MenuItem, Dialog, DialogTitle, DialogContent, DialogActions, Switch, FormControlLabel } from '@mui/material'
 import DeleteIcon from '@mui/icons-material/Delete'
 import EditIcon from '@mui/icons-material/Edit'
 import AddIcon from '@mui/icons-material/Add'
+import { useAuth } from '../../context/AuthContext'
 import { addOffer, updateOffer, deleteOffer } from '../../services/api'
 
 export default function OffersManager({ movie, stores, onUpdate }) {
+  const { user } = useAuth()
+  const isManager = user?.role === 'manager'
+  const managerStoreId = isManager ? (user.store?._id || user.store) : null
+
   const [offerDialog, setOfferDialog] = useState(false)
   const [editingIdx, setEditingIdx] = useState(null)
   const [offerForm, setOfferForm] = useState({ store: '', description: '', discountPercent: '', startDate: '', endDate: '', active: true })
@@ -13,9 +18,18 @@ export default function OffersManager({ movie, stores, onUpdate }) {
   const offers = movie?.offers || []
 
   const resetForm = () => {
-    setOfferForm({ store: '', description: '', discountPercent: '', startDate: '', endDate: '', active: true })
+    setOfferForm({
+      store: isManager ? managerStoreId : '',
+      description: '', discountPercent: '', startDate: '', endDate: '', active: true
+    })
     setEditingIdx(null)
   }
+
+  useEffect(() => {
+    if (isManager && managerStoreId) {
+      setOfferForm(prev => ({ ...prev, store: managerStoreId }))
+    }
+  }, [isManager, managerStoreId])
 
   const openAdd = () => {
     resetForm()
@@ -121,14 +135,14 @@ export default function OffersManager({ movie, stores, onUpdate }) {
         <DialogTitle>{editingIdx !== null ? 'Editar oferta' : 'Nueva oferta'}</DialogTitle>
         <DialogContent>
           <TextField fullWidth label="Descripción" value={offerForm.description} onChange={(e) => setOfferForm({ ...offerForm, description: e.target.value })} margin="dense" required />
-          <TextField fullWidth label="Descuento (%)" type="number" value={offerForm.discountPercent} onChange={(e) => setOfferForm({ ...offerForm, discountPercent: e.target.value })} margin="dense" inputProps={{ min: 1, max: 100 }} required />
+          <TextField fullWidth label="Descuento (%)" type="number" value={offerForm.discountPercent} onChange={(e) => setOfferForm({ ...offerForm, discountPercent: e.target.value })} margin="dense" slotProps={{ htmlInput: { min: 1, max: 100 } }} required />
           <TextField fullWidth label="Fecha inicio" type="date" value={offerForm.startDate} onChange={(e) => setOfferForm({ ...offerForm, startDate: e.target.value })} margin="dense" slotProps={{ inputLabel: { shrink: true } }} required />
           <TextField fullWidth label="Fecha fin" type="date" value={offerForm.endDate} onChange={(e) => setOfferForm({ ...offerForm, endDate: e.target.value })} margin="dense" slotProps={{ inputLabel: { shrink: true } }} required />
           <FormControl fullWidth margin="dense">
-            <InputLabel>Tienda (opcional)</InputLabel>
-            <Select value={offerForm.store} label="Tienda (opcional)" onChange={(e) => setOfferForm({ ...offerForm, store: e.target.value })}>
-              <MenuItem value="">Global (todas las tiendas)</MenuItem>
-              {stores.map((s) => <MenuItem key={s._id} value={s._id}>{s.name}</MenuItem>)}
+            <InputLabel>{isManager ? 'Tienda' : 'Tienda (opcional)'}</InputLabel>
+            <Select value={offerForm.store || (isManager ? managerStoreId : '')} label={isManager ? 'Tienda' : 'Tienda (opcional)'} onChange={(e) => setOfferForm({ ...offerForm, store: e.target.value })} disabled={isManager}>
+              {!isManager && <MenuItem value="">Global (todas las tiendas)</MenuItem>}
+              {stores.filter(s => !isManager || s._id === managerStoreId).map((s) => <MenuItem key={s._id} value={s._id}>{s.name}</MenuItem>)}
             </Select>
           </FormControl>
           <FormControlLabel control={<Switch checked={offerForm.active} onChange={(e) => setOfferForm({ ...offerForm, active: e.target.checked })} />} label="Oferta activa" sx={{ mt: 1 }} />

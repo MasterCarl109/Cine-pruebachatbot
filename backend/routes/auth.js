@@ -86,7 +86,7 @@ router.get('/socket-token', async (req, res) => {
 
 router.get('/me', authenticate, async (req, res) => {
     try {
-        if (req.user.type !== 'staff') {
+        if (req.user.type !== 'staff' && !['admin', 'manager', 'employee'].includes(req.user.role)) {
             return res.status(403).json({ error: 'Solo personal puede acceder a este perfil' })
         }
         const user = await User.findById(req.user.id).select('name email role store').populate('store', 'name').lean()

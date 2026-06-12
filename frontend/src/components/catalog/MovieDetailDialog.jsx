@@ -31,7 +31,8 @@ export default function MovieDetailDialog({ open, movie, onClose }) {
       screeningDate: s.date,
       showtime: s.time,
       room: s.room,
-      availableSeats: s.totalSeats - s.bookedSeats
+      availableSeats: s.totalSeats - s.bookedSeats,
+      totalSeats: s.totalSeats
     })
   }
 
@@ -151,6 +152,7 @@ export default function MovieDetailDialog({ open, movie, onClose }) {
           showtime={reserveTarget.showtime}
           room={reserveTarget.room}
           availableSeats={reserveTarget.availableSeats}
+          totalSeats={reserveTarget.totalSeats}
           onClose={() => setReserveTarget(null)}
         />
       )}

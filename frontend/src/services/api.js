@@ -67,6 +67,7 @@ export const getMyReservations = () => api.get('/reservations/mine')
 export const createReservation = (data) => api.post('/reservations', data)
 export const cancelReservation = (id) => api.put(`/reservations/${id}/cancel`)
 export const checkSeat = (params) => api.get('/reservations/check-seat', { params })
+export const getOccupiedSeats = (params) => api.get('/reservations/occupied', { params })
 export const clientReserve = (data) => api.post('/reservations/client-reserve', data)
 export const clientCancelReservation = (id) => api.put(`/reservations/${id}/client-cancel`)
 

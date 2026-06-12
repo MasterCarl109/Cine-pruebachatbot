@@ -1,12 +1,13 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Container, Typography, Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Select, MenuItem, InputLabel, FormControl, IconButton, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, Box } from '@mui/material'
 import { getMovies, getMovie, createMovie, updateMovie, deleteMovie, getDirectors, getGenres, getStores } from '../services/api'
+import { useAuth } from '../context/AuthContext'
 import DeleteIcon from '@mui/icons-material/Delete'
 import EditIcon from '@mui/icons-material/Edit'
 import AddIcon from '@mui/icons-material/Add'
 import OffersManager from '../components/admin/OffersManager'
 
-const emptyForm = { title: '', releaseDate: '', synopsis: '', duration: '', rating: 'PG-13', director: '', genres: [] }
+const emptyForm = { title: '', releaseDate: '', synopsis: '', duration: '', rating: 'PG-13', director: '', genres: [], price: '' }
 
 function getMovieStatus(movie) {
   const today = new Date()
@@ -21,6 +22,7 @@ function getMovieStatus(movie) {
 }
 
 export default function AdminMovies() {
+  const { user } = useAuth()
   const [movies, setMovies] = useState([])
   const [directors, setDirectors] = useState([])
   const [genres, setGenres] = useState([])
@@ -30,6 +32,13 @@ export default function AdminMovies() {
   const [editing, setEditing] = useState(null)
   const [screenings, setScreenings] = useState([])
   const [movieData, setMovieData] = useState(null)
+
+  const visibleStores = useMemo(() => {
+    if (!user || !stores.length) return stores
+    if (user.role !== 'manager' || !user.store) return stores
+    const storeId = user.store._id || user.store
+    return stores.filter(s => s._id === storeId)
+  }, [stores, user])
 
   const fetchMovieOffers = useCallback(async (id) => {
     if (!id) return
@@ -54,6 +63,7 @@ export default function AdminMovies() {
       ...form,
       releaseDate: form.releaseDate ? new Date(form.releaseDate) : undefined,
       duration: Number(form.duration),
+      price: Number(form.price),
       screenings: screenings.filter(s => s.date && s.time)
     }
     if (editing) {
@@ -75,6 +85,7 @@ export default function AdminMovies() {
       releaseDate: movie.releaseDate ? movie.releaseDate.slice(0, 10) : '',
       synopsis: movie.synopsis || '',
       duration: String(movie.duration || ''),
+      price: movie.price || '',
       rating: movie.rating || 'PG-13',
       director: movie.director?._id || '',
       genres: movie.genres?.map(g => g._id) || []
@@ -167,6 +178,7 @@ export default function AdminMovies() {
           <TextField fullWidth label="Fecha de estreno" type="date" value={form.releaseDate} onChange={(e) => setForm({ ...form, releaseDate: e.target.value })} margin="dense" slotProps={{ inputLabel: { shrink: form.releaseDate ? true : undefined } }} />
           <TextField fullWidth label="Sinopsis" value={form.synopsis} onChange={(e) => setForm({ ...form, synopsis: e.target.value })} margin="dense" multiline rows={3} />
           <TextField fullWidth label="Duración (min)" value={form.duration} onChange={(e) => setForm({ ...form, duration: e.target.value })} margin="dense" type="number" />
+          <TextField fullWidth label="Precio ($)" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} margin="dense" type="number" slotProps={{ htmlInput: { min: 1 } }} />
           <FormControl fullWidth margin="dense">
             <InputLabel>Clasificación</InputLabel>
             <Select value={form.rating} label="Clasificación" onChange={(e) => setForm({ ...form, rating: e.target.value })}>
@@ -187,7 +199,7 @@ export default function AdminMovies() {
           </FormControl>
 
           <Typography variant="subtitle2" sx={{ mt: 3, mb: 1 }}>Funciones (Screenings)</Typography>
-          {stores.map((store) => {
+          {visibleStores.map((store) => {
             const storeScreenings = getStoreScreenings(store._id)
             return (
               <Box key={store._id} sx={{ mb: 2, p: 2, border: '1px solid #e0e0e0', borderRadius: 1 }}>

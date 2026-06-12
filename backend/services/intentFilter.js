@@ -8,15 +8,15 @@ const BLACKLIST = [
     'clima', 'lluvia', 'temperatura', 'tormenta',
     'música', 'canción', 'álbum', 'banda', 'concierto', 'spotify',
     'cocina', 'receta', 'comida', 'restaurante',
-    'tecnología', 'programación', 'código', 'software', 'hardware', 'javascript', 'python',
+    'tecnología', 'programación', 'inteligencia artificial', 'código', 'software', 'hardware', 'javascript', 'python',
     'salud', 'enfermedad', 'medicina', 'hospital', 'doctor',
     'economía', 'dinero', 'bolsa', 'inversión', 'criptomoneda',
     'noticia',
     'historia', 'guerra', 'país',
     'viaje', 'hotel', 'vuelo', 'turismo',
     'videojuego', 'playstation', 'xbox', 'nintendo',
-    'matemática', 'calcular', 'suma', 'resta', 'multiplicación', 'división', 'ecuación', 'fórmula',
-    'cuánto es', 'cuanto es'
+    'matemática', 'calcular', 'suma', 'resta', 'multiplicación', 'división', 'ecuación', 'fórmula', 'álgebra', 'cálculo',
+    'cuánto es', 'cuanto es', 'cuánto da', 'cuanto da', 'cuánto sale'
 ]
 
 function hasBlacklistedWords(message) {

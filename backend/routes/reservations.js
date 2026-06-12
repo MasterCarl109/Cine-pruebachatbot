@@ -300,6 +300,41 @@ router.get('/check-seat', checkSeatRules, async (req, res) => {
 })
 
 // ============================================================
+// GET occupied seats for a screening (client-accessible)
+// ============================================================
+router.get('/occupied', async (req, res) => {
+    try {
+        const { movieId, storeId, screeningDate, showtime, room } = req.query
+
+        const movie = await Movie.findById(movieId)
+        if (!movie) return res.status(404).json({ error: 'Película no encontrada' })
+
+        const screening = movie.screenings.find(s => {
+            const sId = s.store?._id || s.store
+            return String(sId) === String(storeId) &&
+                s.room === room &&
+                sameDay(s.date, screeningDate) &&
+                s.time === showtime
+        })
+        if (!screening) return res.status(404).json({ error: 'Función no encontrada' })
+
+        const occupied = await Reservation.find({
+            movie: movieId,
+            store: storeId,
+            room,
+            screeningDate: screening.date,
+            showtime,
+            status: 'active'
+        }).select('seatNumber').lean()
+
+        res.json({ occupied: occupied.map(r => r.seatNumber), totalSeats: screening.totalSeats, bookedSeats: screening.bookedSeats })
+    } catch (error) {
+        console.error('Error al obtener asientos ocupados:', error)
+        res.status(500).json({ error: error.message })
+    }
+})
+
+// ============================================================
 // CLIENT SELF-RESERVE with payment (multi-seat + children discount)
 // ============================================================
 
